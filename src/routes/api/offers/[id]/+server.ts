@@ -24,8 +24,8 @@ function failure(error: unknown): Response {
 	return json({ error: message }, status);
 }
 
-export const GET: RequestHandler = ({ params }) => {
-	const offer = getOffer(params.id);
+export const GET: RequestHandler = async ({ params }) => {
+	const offer = await getOffer(params.id);
 	if (!offer) return json({ error: 'Offer not found.' }, 404);
 	return json({ offer });
 };
@@ -39,16 +39,16 @@ export const PATCH: RequestHandler = async ({ params, request, url }) => {
 	}
 	try {
 		const patch = parseOfferPatch(body);
-		const offer = updateOffer(params.id, patch, tokenFrom(request, url));
+		const offer = await updateOffer(params.id, patch, tokenFrom(request, url));
 		return json({ offer });
 	} catch (error) {
 		return failure(error);
 	}
 };
 
-export const DELETE: RequestHandler = ({ params, request, url }) => {
+export const DELETE: RequestHandler = async ({ params, request, url }) => {
 	try {
-		const offer = cancelOffer(params.id, tokenFrom(request, url));
+		const offer = await cancelOffer(params.id, tokenFrom(request, url));
 		return json({ offer });
 	} catch (error) {
 		return failure(error);

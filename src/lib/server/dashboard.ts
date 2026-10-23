@@ -1,27 +1,14 @@
 import type { ItemMarket, MarketResponse, MarketSummary, Offer } from '../market';
-import { getRevision, db } from './db';
+import { getRevision } from './db';
 import { listAlerts } from './alerts';
-import { getGuilds, listOffers } from './offers';
+import { getGuilds, getOfferCounts, hasSeedOffers, listOffers } from './offers';
+import type { OfferCounts } from './offers-core';
 import { computeMarket, getAllHistory, getHistory } from './market';
 import { serverEnv } from './env';
 
-function summary(open: Offer[]): MarketSummary {
+function summary(open: Offer[], counts: OfferCounts): MarketSummary {
 	const buys = open.filter((offer) => offer.side === 'buy');
 	const sells = open.filter((offer) => offer.side === 'sell');
-	const now = Date.now();
-	const dayAgo = now - 24 * 60 * 60 * 1000;
-	const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-
-	const offers24h = (
-		db.prepare('SELECT COUNT(*) AS count FROM offers WHERE created_at >= ?').get(dayAgo) as {
-			count: number;
-		}
-	).count;
-	const traders = (
-		db
-			.prepare('SELECT COUNT(DISTINCT LOWER(ign)) AS count FROM offers WHERE created_at >= ?')
-			.get(weekAgo) as { count: number }
-	).count;
 
 	return {
 		openBuys: buys.length,
@@ -30,40 +17,45 @@ function summary(open: Offer[]): MarketSummary {
 		sellQty: sells.reduce((sum, offer) => sum + offer.quantity, 0),
 		bids: buys.length,
 		asks: sells.length,
-		offers24h,
-		traders,
+		offers24h: counts.offers24h,
+		traders: counts.traders,
 		guilds: new Set(open.map((offer) => offer.guild).filter(Boolean)).size,
 		listedValue: open.reduce((sum, offer) => sum + offer.quantity * offer.price, 0)
 	};
 }
 
-export function getMarketResponse(): MarketResponse {
-	const open = listOffers({ status: 'open', limit: 1000 });
-	const recent = listOffers({ status: 'all', limit: 10 });
-	const history = getAllHistory();
+export async function getMarketResponse(): Promise<MarketResponse> {
+	const [open, recent, history, alerts, guilds, counts, hasDemo, revision] = await Promise.all([
+		listOffers({ status: 'open', limit: 1000 }),
+		listOffers({ status: 'all', limit: 10 }),
+		getAllHistory(),
+		listAlerts(12),
+		getGuilds(),
+		getOfferCounts(),
+		hasSeedOffers(),
+		getRevision()
+	]);
 	const items = computeMarket(open, history);
-	const hasDemo =
-		(db.prepare(`SELECT 1 AS hit FROM offers WHERE source = 'seed' LIMIT 1`).get() as
-			| { hit: number }
-			| undefined) !== undefined;
 
 	return {
 		offers: open,
 		recent,
 		items,
-		alerts: listAlerts(12),
-		summary: summary(open),
-		guilds: getGuilds(),
+		alerts,
+		summary: summary(open, counts),
+		guilds,
 		hasDemo,
-		revision: getRevision(),
+		revision,
 		serverTime: Date.now(),
 		thresholdPct: serverEnv.alertThresholdPct
 	};
 }
 
-export function getItemMarket(itemId: string): ItemMarket | null {
-	const offers = listOffers({ status: 'open', itemId, limit: 500 });
-	const history = getHistory(itemId);
+export async function getItemMarket(itemId: string): Promise<ItemMarket | null> {
+	const [offers, history] = await Promise.all([
+		listOffers({ status: 'open', itemId, limit: 500 }),
+		getHistory(itemId)
+	]);
 	if (!offers.length && !history.length) return null;
 	return computeMarket(offers, new Map([[itemId, history]]))[0] ?? null;
 }

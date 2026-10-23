@@ -9,8 +9,8 @@
  * id) so the dashboard can show a "demo data" banner and the bot has something
  * to display without messaging a real Discord server.
  */
-import { db, bumpRevision, newEditToken, newId, transaction } from '../src/lib/server/db';
-import { getBestPrices } from '../src/lib/server/market';
+import { db, bumpRevisionSync, newEditToken, newId, transaction } from '../src/lib/server/db';
+import { getBestPrices } from '../src/lib/server/market-sqlite';
 import { serverEnv } from '../src/lib/server/env';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -321,7 +321,7 @@ transaction(() => {
 		insertedAlerts += 1;
 	});
 
-	bumpRevision();
+	bumpRevisionSync();
 });
 
 const finalOffers = countRows('SELECT COUNT(*) AS count FROM offers');

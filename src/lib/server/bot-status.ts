@@ -2,18 +2,27 @@ import type { BotStatus } from '../market';
 import { getMeta } from './db';
 import { serverEnv } from './env';
 
-export function getBotStatus(): BotStatus {
-	const lastSeen = Number(getMeta('bot:last_seen') ?? 0) || null;
+export async function getBotStatus(): Promise<BotStatus> {
+	const [lastSeenRaw, channelIdRaw, channelName, clientIdRaw, tag, guildCountRaw] =
+		await Promise.all([
+			getMeta('bot:last_seen'),
+			getMeta('bot:alert_channel_id'),
+			getMeta('bot:alert_channel_name'),
+			getMeta('bot:client_id'),
+			getMeta('bot:tag'),
+			getMeta('bot:guild_count')
+		]);
+
+	const lastSeen = Number(lastSeenRaw ?? 0) || null;
 	const configured = Boolean(serverEnv.discordToken && serverEnv.discordClientId);
-	const channelId = getMeta('bot:alert_channel_id') || serverEnv.discordAlertChannelId || null;
-	const channelName = getMeta('bot:alert_channel_name');
-	const clientId = getMeta('bot:client_id') || serverEnv.discordClientId;
+	const channelId = channelIdRaw || serverEnv.discordAlertChannelId || null;
+	const clientId = clientIdRaw || serverEnv.discordClientId;
 
 	return {
 		configured,
 		online: Boolean(lastSeen && Date.now() - lastSeen < 90_000),
-		tag: getMeta('bot:tag'),
-		guildCount: Number(getMeta('bot:guild_count') ?? 0) || null,
+		tag,
+		guildCount: Number(guildCountRaw ?? 0) || null,
 		lastSeen,
 		alertChannelId: channelId,
 		alertChannelName: channelName,

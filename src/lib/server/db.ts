@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { serverEnv } from './env';
 
 export interface OfferRow {
@@ -117,9 +118,47 @@ function openDatabase(): DatabaseSync {
 	return database;
 }
 
-// Keep a single connection alive across dev-server hot reloads.
+// Keep a single connection alive across dev-server hot reloads. The connection
+// is opened lazily so a Supabase-only deployment never touches the filesystem.
 const globalScope = globalThis as typeof globalThis & { __ms3Database?: DatabaseSync };
-export const db: DatabaseSync = (globalScope.__ms3Database ??= openDatabase());
+
+function database(): DatabaseSync {
+	return (globalScope.__ms3Database ??= openDatabase());
+}
+
+export const db: DatabaseSync = new Proxy({} as DatabaseSync, {
+	get(_target, property) {
+		const instance = database();
+		const value = Reflect.get(instance, property);
+		return typeof value === 'function' ? value.bind(instance) : value;
+	}
+});
+
+const configuredSupabase = Boolean(serverEnv.supabaseUrl && serverEnv.supabaseSecretKey);
+const requestedBackend = process.env.MARKET_BACKEND?.trim().toLowerCase();
+export const usingSupabase = configuredSupabase && requestedBackend !== 'sqlite';
+
+let supabaseClient: SupabaseClient | null = null;
+
+/** Server-only Supabase client using the secret key (bypasses RLS). */
+export function supabase(): SupabaseClient {
+	if (!supabaseClient) {
+		if (!configuredSupabase) {
+			throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SECRET_KEY.');
+		}
+		supabaseClient = createClient(serverEnv.supabaseUrl, serverEnv.supabaseSecretKey, {
+			auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+		});
+	}
+	return supabaseClient;
+}
+
+export function assertOk(
+	error: { message: string } | null,
+	context: string
+): void {
+	if (error) throw new Error(`${context}: ${error.message}`);
+}
 
 export function newId(): string {
 	return randomBytes(9).toString('base64url');
@@ -129,28 +168,28 @@ export function newEditToken(): string {
 	return randomBytes(24).toString('base64url');
 }
 
-export function getRevision(): number {
+export function getRevisionSync(): number {
 	const row = db.prepare(`SELECT value FROM meta WHERE key = 'revision'`).get() as
 		| { value: string }
 		| undefined;
 	return Number(row?.value ?? 0);
 }
 
-export function bumpRevision(): number {
+export function bumpRevisionSync(): number {
 	db.prepare(
 		`UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'revision'`
 	).run();
-	return getRevision();
+	return getRevisionSync();
 }
 
-export function getMeta(key: string): string | null {
+export function getMetaSync(key: string): string | null {
 	const row = db.prepare(`SELECT value FROM meta WHERE key = ?`).get(key) as
 		| { value: string }
 		| undefined;
 	return row?.value ?? null;
 }
 
-export function setMeta(key: string, value: string | number | null): void {
+export function setMetaSync(key: string, value: string | number | null): void {
 	if (value === null) {
 		db.prepare(`DELETE FROM meta WHERE key = ?`).run(key);
 		return;
@@ -159,6 +198,53 @@ export function setMeta(key: string, value: string | number | null): void {
 		`INSERT INTO meta (key, value) VALUES (?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`
 	).run(key, String(value));
+}
+
+/** Async, backend-aware metadata helpers used by the web app and the bot. */
+export async function getRevision(): Promise<number> {
+	if (!usingSupabase) return getRevisionSync();
+	const { data, error } = await supabase()
+		.from('meta')
+		.select('value')
+		.eq('key', 'revision')
+		.maybeSingle();
+	assertOk(error, 'read revision');
+	return Number(data?.value ?? 0);
+}
+
+export async function bumpRevision(): Promise<number> {
+	if (!usingSupabase) return bumpRevisionSync();
+	const { data, error } = await supabase().rpc('bump_revision');
+	assertOk(error, 'bump revision');
+	if (data !== null && data !== undefined) return Number(data);
+	return getRevision();
+}
+
+export async function getMeta(key: string): Promise<string | null> {
+	if (!usingSupabase) return getMetaSync(key);
+	const { data, error } = await supabase()
+		.from('meta')
+		.select('value')
+		.eq('key', key)
+		.maybeSingle();
+	assertOk(error, `read meta ${key}`);
+	return data?.value ?? null;
+}
+
+export async function setMeta(key: string, value: string | number | null): Promise<void> {
+	if (!usingSupabase) {
+		setMetaSync(key, value);
+		return;
+	}
+	if (value === null) {
+		const { error } = await supabase().from('meta').delete().eq('key', key);
+		assertOk(error, `delete meta ${key}`);
+		return;
+	}
+	const { error } = await supabase()
+		.from('meta')
+		.upsert({ key, value: String(value) }, { onConflict: 'key' });
+	assertOk(error, `write meta ${key}`);
 }
 
 export function transaction<T>(fn: () => T): T {

@@ -109,7 +109,13 @@ Add the project URL and keys to `.env`, then apply the schema in one of two ways
 
 The API keys can read and write rows, but they cannot run DDL, so schema creation needs either the SQL editor or a personal access token.
 
-Local development continues to use the SQLite demo database. The Supabase schema mirrors the same tables and column names for a hosted deployment.
+### Which database is used?
+
+The app selects **Supabase automatically when `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are set**, and falls back to SQLite otherwise. `MARKET_BACKEND=sqlite` forces the local demo database; `MARKET_BACKEND=supabase` forces the hosted one.
+
+Both the web app and the Discord bot use the same backend and the same `meta.revision` counter. A write from the bot bumps the revision through `bump_revision()`, and the dashboard's SSE stream refetches within a couple of seconds.
+
+`npm run db:seed` and `npm run db:reset` are SQLite-only demo tools. A fresh Supabase project starts empty — create the first offers from the dashboard or `/post` in Discord.
 
 ---
 
@@ -145,6 +151,7 @@ Categories currently supported: `Announcement`, `Market`, `Guide` and `Event`.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `APP_URL` | `http://localhost:5173` | Public URL used in Discord embeds and links. |
+| `MARKET_BACKEND` | `supabase` if configured | `supabase` or `sqlite`. |
 | `MARKET_DB_PATH` | `data/market.db` | Shared SQLite database. Web app and bot must use the same path. |
 | `ALERT_THRESHOLD_PCT` | `8` | Minimum best bid/ask move to alert on. |
 | `ALERT_COOLDOWN_MINUTES` | `45` | Per item + direction alert cooldown. |
@@ -173,11 +180,16 @@ src/
     client/                browser stores (profile, live SSE, toasts, composer)
     components/            Svelte UI (market table, offer form, cards, map frame…)
     server/
-      db.ts                node:sqlite schema, revision counter, transactions
-      offers.ts            offer CRUD, edit tokens, guilds, player summaries
-      market.ts            order-book snapshots, history, alert generation
+      db.ts                backend switch, SQLite schema, Supabase client, meta/revision
+      offers.ts            async offer facade (SQLite or Supabase)
+      offers-sqlite.ts     local offer CRUD, edit tokens, guilds, player summaries
+      offers-supabase.ts   hosted offer CRUD
+      market.ts            async history/snapshot facade
+      market-core.ts       pure order book + alert evaluation
+      market-sqlite.ts     local price history and alert queue
+      market-supabase.ts   hosted price history and alert queue
       dashboard.ts         /api/market response assembly
-      alerts.ts            alert queue reads/writes for the bot
+      alerts.ts            async alert queue facade for the bot
       dynmap.ts            live Dynmap player proxy
       env.ts               environment loading + defaults
   routes/
@@ -242,9 +254,11 @@ npm run build
 APP_URL=https://market.example.com PORT=3000 node build/index.js
 ```
 
-Run the bot as a second process with `npm run bot:start`, sharing `MARKET_DB_PATH` with the web app. SQLite is in WAL mode, so the two processes can read and write concurrently on one host. If you run multiple web instances, point them at a single database file on shared storage or switch the data layer to a client/server database.
+Run the bot as a second process with `npm run bot:start`. With Supabase configured, both processes only need the same `SUPABASE_URL` and `SUPABASE_SECRET_KEY`; there is no shared volume to manage. The revision counter and alert queue live in Postgres, so multiple web instances and the bot stay in sync.
 
-`data/` is gitignored, so back up `market.db` (and its `-wal` file while the app is running) if the board matters to you.
+For a SQLite-only deployment, set `MARKET_BACKEND=sqlite`, keep `MARKET_DB_PATH` on shared storage, and run the bot on the same host. SQLite is in WAL mode, so the two processes can read and write concurrently.
+
+`data/` is gitignored. Back up `market.db` (and its `-wal` file while the app is running) if you use the local backend.
 
 ---
 

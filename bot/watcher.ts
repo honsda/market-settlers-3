@@ -9,8 +9,8 @@ let timer: NodeJS.Timeout | null = null;
 let stopped = true;
 let lastNotice = 0;
 
-function alertChannelId(): string {
-	return getMeta('bot:alert_channel_id') || botConfig.alertChannelId;
+async function alertChannelId(): Promise<string> {
+	return (await getMeta('bot:alert_channel_id')) || botConfig.alertChannelId;
 }
 
 function notice(message: string): void {
@@ -22,7 +22,7 @@ function notice(message: string): void {
 }
 
 async function resolveChannel(client: Client): Promise<TextChannel | null> {
-	const id = alertChannelId();
+	const id = await alertChannelId();
 	if (!id) {
 		notice('No alert channel configured. Run /alerts in Discord or set DISCORD_ALERT_CHANNEL_ID.');
 		return null;
@@ -45,7 +45,7 @@ async function tick(client: Client): Promise<void> {
 	if (stopped) return;
 
 	try {
-		const pending = getPendingAlerts(10);
+		const pending = await getPendingAlerts(10);
 		if (pending.length) {
 			const channel = await resolveChannel(client);
 			if (channel) {
@@ -55,7 +55,7 @@ async function tick(client: Client): Promise<void> {
 						const message = await channel.send({
 							embeds: [alertEmbed(alert, getItem(alert.itemId))]
 						});
-						markAlertPosted(alert.id, message.id);
+						await markAlertPosted(alert.id, message.id);
 					} catch (error) {
 						console.error(
 							`[bot] Failed to post alert ${alert.id}:`,
@@ -65,7 +65,7 @@ async function tick(client: Client): Promise<void> {
 						break;
 					}
 				}
-				if (pending.length) setMeta('bot:last_alert_at', Date.now());
+				if (pending.length) await setMeta('bot:last_alert_at', Date.now());
 			}
 		}
 	} catch (error) {

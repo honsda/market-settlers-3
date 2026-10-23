@@ -18,11 +18,18 @@ import {
 	itemTexture,
 	searchItems,
 	type ItemMarket,
-	type MarketResponse
+	type MarketResponse,
+	type Offer
 } from '../src/lib/market';
 import { formatPct, formatPrice, formatQty, timeAgo } from '../src/lib/format';
 import { getItemMarket, getMarketResponse } from '../src/lib/server/dashboard';
-import { listOffers, getPlayerSummary, createOffer, cancelOffer } from '../src/lib/server/offers';
+import {
+	listOffers,
+	getPlayerSummary,
+	createOffer,
+	cancelOffer,
+	type PlayerSummary
+} from '../src/lib/server/offers';
 import { parseOfferInput } from '../src/lib/server/validation';
 import { setMeta } from '../src/lib/server/db';
 import { COLORS, dashboardUrl, footer, offerEmbed } from './format';
@@ -282,7 +289,7 @@ function marketEmbed(response: MarketResponse, sort: string): EmbedBuilder {
 	return embed;
 }
 
-function offersEmbed(offers: ReturnType<typeof listOffers>, filterLabel: string): EmbedBuilder {
+function offersEmbed(offers: Offer[], filterLabel: string): EmbedBuilder {
 	const lines = offers.slice(0, 10).map((offer) => {
 		const item = getItem(offer.itemId);
 		const name = item?.name ?? offer.itemId;
@@ -306,7 +313,7 @@ function offersEmbed(offers: ReturnType<typeof listOffers>, filterLabel: string)
 	return embed;
 }
 
-function playerEmbed(summary: ReturnType<typeof getPlayerSummary>): EmbedBuilder {
+function playerEmbed(summary: PlayerSummary): EmbedBuilder {
 	const embed = new EmbedBuilder()
 		.setColor(COLORS.neutral)
 		.setAuthor({ name: `Trader · ${summary.ign}` })
@@ -337,7 +344,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 		case 'price': {
 			const raw = interaction.options.getString('item', true);
 			const itemId = resolveItemId(raw);
-			const entry = getItemMarket(itemId);
+			const entry = await getItemMarket(itemId);
 			if (!entry) {
 				await interaction.reply({
 					embeds: [
@@ -357,7 +364,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
 		case 'market': {
 			const sort = interaction.options.getString('sort') ?? 'activity';
-			const response = getMarketResponse();
+			const response = await getMarketResponse();
 			await interaction.reply({ embeds: [marketEmbed(response, sort)] });
 			return;
 		}
@@ -368,7 +375,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 			const player = interaction.options.getString('player')?.trim();
 			const itemId = rawItem ? resolveItemId(rawItem) : undefined;
 
-			const offers = listOffers({
+			const offers = await listOffers({
 				status: 'open',
 				itemId,
 				side: side ?? undefined,
@@ -389,7 +396,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
 		case 'player': {
 			const ign = interaction.options.getString('ign', true).trim();
-			const summary = getPlayerSummary(ign);
+			const summary = await getPlayerSummary(ign);
 			if (!summary.lastSeen) {
 				await interaction.reply({
 					embeds: [
@@ -432,7 +439,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 				y,
 				z
 			});
-			const { offer, editToken } = createOffer(input, { source: 'discord' });
+			const { offer, editToken } = await createOffer(input, { source: 'discord' });
 			const item = getItem(offer.itemId);
 
 			const cancel = new ButtonBuilder()
@@ -471,8 +478,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 				return;
 			}
 
-			setMeta('bot:alert_channel_id', channel.id);
-			setMeta('bot:alert_channel_name', channel.name);
+			await setMeta('bot:alert_channel_id', channel.id);
+			await setMeta('bot:alert_channel_name', channel.name);
 			await interaction.reply({
 				embeds: [
 					new EmbedBuilder()
@@ -513,7 +520,7 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
 	if (scope !== 'offer' || action !== 'cancel' || !offerId || !token) return;
 
 	try {
-		const offer = cancelOffer(offerId, token, 'cancelled');
+		const offer = await cancelOffer(offerId, token, 'cancelled');
 		const item = getItem(offer.itemId);
 		await interaction.update({
 			embeds: [

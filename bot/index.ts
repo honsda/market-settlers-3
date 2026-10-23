@@ -20,24 +20,24 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 let heartbeat: NodeJS.Timeout | null = null;
 let shuttingDown = false;
 
-function beat(): void {
+async function beat(): Promise<void> {
 	if (shuttingDown) return;
 	try {
-		setMeta('bot:last_seen', Date.now());
+		await setMeta('bot:last_seen', Date.now());
 		if (client.user) {
-			setMeta('bot:tag', client.user.tag);
-			setMeta('bot:client_id', client.user.id);
+			await setMeta('bot:tag', client.user.tag);
+			await setMeta('bot:client_id', client.user.id);
 		}
-		if (client.isReady()) setMeta('bot:guild_count', client.guilds.cache.size);
+		if (client.isReady()) await setMeta('bot:guild_count', client.guilds.cache.size);
 	} catch (error) {
 		console.error('[bot] Heartbeat failed:', error instanceof Error ? error.message : error);
 	}
 }
 
 function startHeartbeat(): void {
-	beat();
+	void beat();
 	if (heartbeat) clearInterval(heartbeat);
-	heartbeat = setInterval(beat, 20_000);
+	heartbeat = setInterval(() => void beat(), 20_000);
 	heartbeat.unref?.();
 }
 
@@ -67,11 +67,11 @@ client.once(Events.ClientReady, async (readyClient) => {
 		console.error('[bot] Run `npm run bot:deploy` after checking DISCORD_CLIENT_ID / DISCORD_GUILD_ID.');
 	}
 
-	if (!getMeta('bot:alert_channel_id') && botConfig.alertChannelId) {
+	if (!(await getMeta('bot:alert_channel_id')) && botConfig.alertChannelId) {
 		try {
 			const channel = await readyClient.channels.fetch(botConfig.alertChannelId);
 			if (channel && 'name' in channel && typeof channel.name === 'string') {
-				setMeta('bot:alert_channel_name', channel.name);
+				await setMeta('bot:alert_channel_name', channel.name);
 			}
 		} catch {
 			// The watcher will report an unreachable channel on its next tick.
@@ -120,7 +120,7 @@ async function shutdown(signal: string): Promise<void> {
 	stopAlertWatcher();
 	if (heartbeat) clearInterval(heartbeat);
 	try {
-		setMeta('bot:last_seen', 0);
+		await setMeta('bot:last_seen', 0);
 	} catch {
 		// The database may already be closing.
 	}

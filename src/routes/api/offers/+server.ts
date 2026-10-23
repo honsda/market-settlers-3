@@ -11,10 +11,10 @@ function json(data: unknown, status = 200): Response {
 	});
 }
 
-export const GET: RequestHandler = ({ url }) => {
+export const GET: RequestHandler = async ({ url }) => {
 	const status = (url.searchParams.get('status') ?? 'open') as OfferStatus | 'all';
 	const side = (url.searchParams.get('side') ?? undefined) as Side | undefined;
-	const offers = listOffers({
+	const offers = await listOffers({
 		status: status === 'all' ? 'all' : status,
 		side: side === 'buy' || side === 'sell' ? side : undefined,
 		itemId: url.searchParams.get('item') ?? undefined,
@@ -46,7 +46,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 	try {
 		const input = parseOfferInput(body);
-		const { offer, editToken } = createOffer(input);
+		const { offer, editToken } = await createOffer(input);
 		return json({ offer, editToken }, 201);
 	} catch (error) {
 		if (error instanceof InputError) return json({ error: error.message }, 400);
