@@ -1,8 +1,8 @@
 # Settlers Market
 
-A live trading board for **Settlers III** on `play.settlers-mc.org` — post buy orders and sell offers, compare the whole order book, jump straight to a meeting point on the live Dynmap, and get significant price moves pushed to Discord.
+A live trading board for **Settlers III** on `play.settlers-mc.org` — post buy orders and sell offers, compare the whole order book, jump straight to a meeting point on the live Dynmap, read market dispatches, and get significant price moves pushed to Discord.
 
-Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v4**, SQLite and **discord.js**.
+Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v4**, SQLite/Supabase and **discord.js**.
 
 ---
 
@@ -12,9 +12,11 @@ Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v
 - **Market board** — best bid, best ask, spread, book depth, 24h move and a 7-day sparkline for every traded item.
 - **Live updates** — offers posted on the website or from Discord appear everywhere within a second via Server-Sent Events.
 - **Embedded live map** — the server Dynmap is framed in the app, with one-click deep links to offer coordinates and a live online-player list.
+- **News & dispatches** — a `/news` section with market announcements, trading guides and community notes, including individual article pages with an in-page contents rail.
 - **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme.
 - **No accounts** — your IGN/guild profile lives in your browser; each offer you create gets a local edit token so only you can cancel it.
 - **Demo mode** — `npm run db:seed` fills the board with believable traders and two weeks of price history.
+- **Supabase-ready schema** — a complete Postgres schema with RLS, indexes, an alert queue and an atomic revision counter lives in `supabase/schema.sql`.
 
 ---
 
@@ -24,7 +26,7 @@ Requirements: **Node.js 24+** (the app uses the built-in `node:sqlite` module) a
 
 ```bash
 git clone https://github.com/honsda/market-settlers-3.git
-cd market-settlers-3
+cd settlers3
 npm install
 cp .env.example .env      # Windows: copy .env.example .env
 npm run db:seed           # optional demo data
@@ -83,6 +85,42 @@ Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default
 
 ---
 
+## Supabase
+
+The hosted Postgres schema lives in [`supabase/schema.sql`](supabase/schema.sql). It creates:
+
+- `offers` — the shared order book, with status/source checks and edit tokens.
+- `price_history` — best bid/ask snapshots used for sparklines and alerts.
+- `alerts` — the bot's queued price signals and delivery state.
+- `meta` — the revision counter, bot heartbeat and alert-channel settings.
+- `bump_revision()` — an atomic revision bump used by the web app and bot.
+- `open_offers` — a convenience view for dashboards.
+
+Row Level Security is enabled on every table and public access is revoked. The server uses `SUPABASE_SECRET_KEY`, which bypasses RLS; the publishable key cannot read the market tables.
+
+Add the project URL and keys to `.env`, then apply the schema in one of two ways:
+
+1. **SQL editor** — open the Supabase dashboard → SQL Editor, paste `supabase/schema.sql`, and run it.
+2. **Management API** — create a personal access token at <https://supabase.com/dashboard/account/tokens>, add `SUPABASE_ACCESS_TOKEN=sbp_...` to `.env`, and run:
+
+   ```bash
+   npm run db:push-schema
+   ```
+
+The API keys can read and write rows, but they cannot run DDL, so schema creation needs either the SQL editor or a personal access token.
+
+Local development continues to use the SQLite demo database. The Supabase schema mirrors the same tables and column names for a hosted deployment.
+
+---
+
+## News & dispatches
+
+The public news section is at `/news`, with article pages at `/news/[slug]`. Dispatches are content, not database rows: edit `src/lib/news.ts` to add an article (`title`, `excerpt`, `category`, `author`, date, accent, icon, tags and a block-based body), and the listing, filters, related links, in-page contents and metadata update automatically.
+
+Categories currently supported: `Announcement`, `Market`, `Guide` and `Event`.
+
+---
+
 ## Scripts
 
 | Script | Description |
@@ -98,6 +136,7 @@ Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default
 | `npm run db:seed` | Add demo offers, history and alerts. |
 | `npm run db:reset` | Delete the local database and reseed it. |
 | `npm run db:seed -- --force` | Rebuild demo rows in place. |
+| `npm run db:push-schema` | Apply `supabase/schema.sql` with `SUPABASE_ACCESS_TOKEN`. |
 
 ---
 
@@ -114,6 +153,10 @@ Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default
 | `DISCORD_CLIENT_ID` | — | Application ID (used for registration and the invite URL). |
 | `DISCORD_GUILD_ID` | — | Optional guild for instant command registration. |
 | `DISCORD_ALERT_CHANNEL_ID` | — | Default alert channel; `/alerts` can override it in the database. |
+| `SUPABASE_URL` | — | Supabase project URL. |
+| `SUPABASE_PUBLISHABLE_KEY` | — | Public key (`sb_publishable_...`); safe for the browser. |
+| `SUPABASE_SECRET_KEY` | — | Server-only secret key (`sb_secret_...`); bypasses RLS. Never expose it. |
+| `SUPABASE_ACCESS_TOKEN` | — | Personal access token used only by `npm run db:push-schema`. |
 
 `.env.local` takes precedence over `.env`. The web app, scripts and bot all load the same files (`src/lib/server/env.ts` uses `process.loadEnvFile`).
 
@@ -125,6 +168,7 @@ Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default
 src/
   lib/
     market.ts              shared catalogue, types, map URL builder
+    news.ts                news article content, categories and helpers
     format.ts              price/quantity/percent/time formatting
     client/                browser stores (profile, live SSE, toasts, composer)
     components/            Svelte UI (market table, offer form, cards, map frame…)
@@ -140,6 +184,7 @@ src/
     +page.svelte           dashboard
     market/               full market board
     map/                  embedded live map
+    news/                 dispatch listing and article pages
     discord/              bot status, commands and alert feed
     api/                  offers, market, history, alerts, server, guilds, stream
 bot/
@@ -151,6 +196,9 @@ bot/
   format.ts                Discord embeds
 scripts/
   seed.ts / reset.ts       demo data and local database reset
+  push-schema.ts           apply supabase/schema.sql via the Management API
+supabase/
+  schema.sql               Postgres tables, indexes, RLS and revision RPC
 data/
   market.db                created on first run (gitignored)
 ```

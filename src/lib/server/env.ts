@@ -38,5 +38,8 @@ export const serverEnv = {
 	discordAlertChannelId: process.env.DISCORD_ALERT_CHANNEL_ID?.trim() ?? '',
 	alertThresholdPct: Math.max(0.5, num(process.env.ALERT_THRESHOLD_PCT, 8)),
 	alertCooldownMinutes: Math.max(1, num(process.env.ALERT_COOLDOWN_MINUTES, 45)),
-	alertPollSeconds: Math.max(5, num(process.env.ALERT_POLL_SECONDS, 20))
+	alertPollSeconds: Math.max(5, num(process.env.ALERT_POLL_SECONDS, 20)),
+	supabaseUrl: (process.env.SUPABASE_URL?.trim() || '').replace(/\/+$/, ''),
+	supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
+	supabaseSecretKey: process.env.SUPABASE_SECRET_KEY?.trim() ?? ''
 };

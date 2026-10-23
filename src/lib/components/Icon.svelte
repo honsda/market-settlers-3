@@ -5,6 +5,7 @@
 		market:
 			'<path d="M3 9l1.6-5h14.8L21 9"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/>',
 		map: '<path d="M9 3 3 5.5v15L9 18l6 3 6-2.5v-15L15 6 9 3Z"/><path d="M9 3v15M15 6v15"/>',
+		news: '<path d="M4 5h13a1 1 0 0 1 1 1v13H5a1 1 0 0 1-1-1V5Z"/><path d="M17 8h3v10a1 1 0 0 1-1 1h-2"/><path d="M7 8h7M7 11h7M7 14h4"/>',
 		mapPin: '<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',
 		plus: '<path d="M12 5v14M5 12h14"/>',
 		search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/>',

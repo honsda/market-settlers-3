@@ -12,6 +12,7 @@
 		{ href: '/', label: 'Dashboard', icon: 'dashboard', exact: true },
 		{ href: '/market', label: 'Market', icon: 'market' },
 		{ href: '/map', label: 'World map', icon: 'map' },
+		{ href: '/news', label: 'News', icon: 'news' },
 		{ href: '/discord', label: 'Discord alerts', icon: 'discord' }
 	];
 
