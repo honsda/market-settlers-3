@@ -1,0 +1,42 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+let loaded = false;
+
+/**
+ * Load `.env.local` / `.env` for scripts and the Discord bot. SvelteKit loads
+ * these itself during dev, but `process.loadEnvFile` keeps the CLI tools and
+ * the bot on the same configuration without extra dependencies.
+ */
+function loadDotEnv(): void {
+	if (loaded) return;
+	loaded = true;
+	for (const file of ['.env.local', '.env']) {
+		const path = resolve(file);
+		if (!existsSync(path)) continue;
+		try {
+			process.loadEnvFile(path);
+		} catch {
+			// A malformed env file should not take the market down.
+		}
+	}
+}
+
+loadDotEnv();
+
+function num(value: string | undefined, fallback: number): number {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export const serverEnv = {
+	dbPath: resolve(process.env.MARKET_DB_PATH?.trim() || 'data/market.db'),
+	appUrl: (process.env.APP_URL?.trim() || 'http://localhost:5173').replace(/\/+$/, ''),
+	discordToken: process.env.DISCORD_TOKEN?.trim() ?? '',
+	discordClientId: process.env.DISCORD_CLIENT_ID?.trim() ?? '',
+	discordGuildId: process.env.DISCORD_GUILD_ID?.trim() ?? '',
+	discordAlertChannelId: process.env.DISCORD_ALERT_CHANNEL_ID?.trim() ?? '',
+	alertThresholdPct: Math.max(0.5, num(process.env.ALERT_THRESHOLD_PCT, 8)),
+	alertCooldownMinutes: Math.max(1, num(process.env.ALERT_COOLDOWN_MINUTES, 45)),
+	alertPollSeconds: Math.max(5, num(process.env.ALERT_POLL_SECONDS, 20))
+};
