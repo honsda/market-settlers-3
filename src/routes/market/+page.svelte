@@ -5,6 +5,7 @@
 	import { formatPrice, formatQty } from '../../lib/format';
 	import { ITEMS, type MarketResponse } from '../../lib/market';
 	import MarketTable from '../../lib/components/MarketTable.svelte';
+	import WikiMarketPanel from '../../lib/components/WikiMarketPanel.svelte';
 	import Icon from '../../lib/components/Icon.svelte';
 	import LivePill from '../../lib/components/LivePill.svelte';
 
@@ -115,4 +116,6 @@
 			between them; a tight spread means a liquid market.
 		</p>
 	{/if}
+
+	<WikiMarketPanel />
 </div>

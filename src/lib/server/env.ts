@@ -39,6 +39,18 @@ export const serverEnv = {
 	alertThresholdPct: Math.max(0.5, num(process.env.ALERT_THRESHOLD_PCT, 8)),
 	alertCooldownMinutes: Math.max(1, num(process.env.ALERT_COOLDOWN_MINUTES, 45)),
 	alertPollSeconds: Math.max(5, num(process.env.ALERT_POLL_SECONDS, 20)),
+	wikiMarketUrl:
+		process.env.WIKI_MARKET_URL?.trim() || 'https://wiki.settlers-mc.org/data/market.json',
+	wikiMarketPollSeconds: Math.max(30, num(process.env.WIKI_MARKET_POLL_SECONDS, 60)),
+	wikiMarketSummaryMinutes: Math.max(5, num(process.env.WIKI_MARKET_SUMMARY_MINUTES, 30)),
+	wikiMarketAlertThresholdPct: Math.max(
+		1,
+		num(process.env.WIKI_MARKET_ALERT_THRESHOLD_PCT, 12)
+	),
+	wikiMarketAlertCooldownMinutes: Math.max(
+		10,
+		num(process.env.WIKI_MARKET_ALERT_COOLDOWN_MINUTES, 60)
+	),
 	supabaseUrl: (process.env.SUPABASE_URL?.trim() || '').replace(/\/+$/, ''),
 	supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
 	supabaseSecretKey: process.env.SUPABASE_SECRET_KEY?.trim() ?? ''

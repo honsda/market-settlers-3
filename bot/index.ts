@@ -10,6 +10,7 @@ import { botConfig, requireToken } from './config';
 import { handleAutocomplete, handleButton, handleCommand } from './commands';
 import { registerCommands } from './register';
 import { startAlertWatcher, stopAlertWatcher } from './watcher';
+import { startWikiMarketWatcher, stopWikiMarketWatcher } from './wiki-market';
 import { getMeta, setMeta } from '../src/lib/server/db';
 import { serverEnv } from '../src/lib/server/env';
 
@@ -55,6 +56,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 	startHeartbeat();
 	startAlertWatcher(client);
+	startWikiMarketWatcher(client);
 
 	try {
 		const scope = await registerCommands();
@@ -118,6 +120,7 @@ async function shutdown(signal: string): Promise<void> {
 	console.log(`\n[bot] ${signal} received, shutting down…`);
 
 	stopAlertWatcher();
+	stopWikiMarketWatcher();
 	if (heartbeat) clearInterval(heartbeat);
 	try {
 		await setMeta('bot:last_seen', 0);

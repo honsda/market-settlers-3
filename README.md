@@ -10,10 +10,11 @@ Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v
 
 - **Buy orders & sell offers** — quantity, price per unit, IGN, guild, contact, note and optional X/Y/Z meeting point.
 - **Market board** — best bid, best ask, spread, book depth, 24h move and a 7-day sparkline for every traded item.
+- **Live shop prices** — the official wiki feed (`/data/market.json`) is shown on `/market` with best wanted/for-sale prices, last sale, 24h volume and movers.
 - **Live updates** — offers posted on the website or from Discord appear everywhere within a second via Server-Sent Events.
 - **Embedded live map** — the server Dynmap is framed in the app, with one-click deep links to offer coordinates and a live online-player list.
 - **News & dispatches** — a `/news` section with market announcements, trading guides and community notes, including individual article pages with an in-page contents rail.
-- **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme.
+- **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme. It also posts a batched market pulse and significant shop-price moves from the official feed.
 - **No accounts** — your IGN/guild profile lives in your browser; each offer you create gets a local edit token so only you can cancel it.
 - **Demo mode** — `npm run db:seed` fills the board with believable traders and two weeks of price history.
 - **Supabase-ready schema** — a complete Postgres schema with RLS, indexes, an alert queue and an atomic revision counter lives in `supabase/schema.sql`.
@@ -55,7 +56,7 @@ npm run dev:all
    DISCORD_TOKEN=...
    DISCORD_CLIENT_ID=...
    DISCORD_GUILD_ID=...              # optional, makes commands appear instantly
-   DISCORD_ALERT_CHANNEL_ID=...      # optional, can also be set with /alerts
+   DISCORD_ALERT_CHANNEL_ID=...      # market channel; can also be set with /alerts
    ```
 
 3. Invite the bot with the `bot` and `applications.commands` scopes. **Send Messages** is the only permission it needs; `/alerts` additionally checks for **Manage Server** on the person running it.
@@ -82,6 +83,28 @@ Item options use Discord autocomplete backed by the shared catalogue in `src/lib
 Every offer mutation snapshots the item's best bid/ask into `price_history`. When a price moves more than `ALERT_THRESHOLD_PCT` (default **8%**), or sets a new 7-day high/low, a row is written to the `alerts` table. The bot polls that queue every `ALERT_POLL_SECONDS` (default 20s) and posts an embed to the configured channel. Alerts are marked as posted only after Discord accepts them, so nothing is lost if the bot is briefly offline.
 
 Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default 45) to keep the feed readable.
+
+---
+
+## Live shop feed
+
+The **Live shop prices** panel on `/market` and the bot's market updates read the same feed as the official wiki market page:
+
+```text
+https://wiki.settlers-mc.org/data/market.json
+```
+
+The server writes that file about every 60 seconds. All prices in it are **gold nuggets**; bundle offers (for example `8 wheat for 2 nuggets`) are normalized to a per-item price before display.
+
+The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) and:
+
+- posts a batched **market pulse** to the configured market channel every `WIKI_MARKET_SUMMARY_MINUTES` (default **30m**) when new trades have happened;
+- posts an immediate **market move** alert when a new trade's average is at least `WIKI_MARKET_ALERT_THRESHOLD_PCT` (default **12%**) away from that item's previous 7-day average;
+- suppresses repeat move alerts for the same item for `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` (default **60m**).
+
+The cursor is stored in `meta` (`wiki:last_trade_ts`, `wiki:last_summary_at`, `wiki:last_feed_generated`), so restarting the bot does not replay old trades. On first start it begins from the newest trade in the feed.
+
+The official feed contains shop names, items, regions and prices — no player names. It is separate from the player-to-player order book in `offers`; the dashboard shows both.
 
 ---
 
@@ -156,6 +179,11 @@ Categories currently supported: `Announcement`, `Market`, `Guide` and `Event`.
 | `ALERT_THRESHOLD_PCT` | `8` | Minimum best bid/ask move to alert on. |
 | `ALERT_COOLDOWN_MINUTES` | `45` | Per item + direction alert cooldown. |
 | `ALERT_POLL_SECONDS` | `20` | Bot alert-queue poll interval. |
+| `WIKI_MARKET_URL` | `https://wiki.settlers-mc.org/data/market.json` | Official shop-price feed. |
+| `WIKI_MARKET_POLL_SECONDS` | `60` | How often the bot checks the shop feed. |
+| `WIKI_MARKET_SUMMARY_MINUTES` | `30` | Batched market-pulse interval. |
+| `WIKI_MARKET_ALERT_THRESHOLD_PCT` | `12` | Move size that triggers an immediate market-move alert. |
+| `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` | `60` | Per-item market-move cooldown. |
 | `DISCORD_TOKEN` | — | Bot token. |
 | `DISCORD_CLIENT_ID` | — | Application ID (used for registration and the invite URL). |
 | `DISCORD_GUILD_ID` | — | Optional guild for instant command registration. |
@@ -175,6 +203,7 @@ Categories currently supported: `Announcement`, `Market`, `Guide` and `Event`.
 src/
   lib/
     market.ts              shared catalogue, types, map URL builder
+    wiki-market.ts         official shop-feed types, regions and item mapping
     news.ts                news article content, categories and helpers
     format.ts              price/quantity/percent/time formatting
     client/                browser stores (profile, live SSE, toasts, composer)
@@ -189,6 +218,7 @@ src/
       market-sqlite.ts     local price history and alert queue
       market-supabase.ts   hosted price history and alert queue
       dashboard.ts         /api/market response assembly
+      wiki-market.ts       official shop-feed fetch, normalization and snapshot
       alerts.ts            async alert queue facade for the bot
       dynmap.ts            live Dynmap player proxy
       env.ts               environment loading + defaults
@@ -203,6 +233,7 @@ bot/
   index.ts                 Discord client, heartbeat, interactions
   commands.ts              slash commands, autocomplete, cancel button
   watcher.ts               queued alert delivery
+  wiki-market.ts           shop-feed pulse and market-move posts
   register.ts              REST command registration
   deploy-commands.ts       standalone registration entrypoint
   format.ts                Discord embeds
@@ -231,6 +262,7 @@ The browser keeps a local profile (`IGN`, guild, contact) and per-offer edit tok
 | Route | Methods | Notes |
 | --- | --- | --- |
 | `/api/market` | `GET` | Offers, recent activity, computed order books, alerts, summary. |
+| `/api/wiki-market` | `GET` | Normalized official shop feed: shops, prices, 24h volume, movers. |
 | `/api/offers` | `GET`, `POST` | Filters: `status`, `side`, `item`, `player`, `guild`, `limit`. |
 | `/api/offers/[id]` | `GET`, `PATCH`, `DELETE` | Mutations need `x-edit-token`. |
 | `/api/history/[item]` | `GET` | Price points for one item. |
