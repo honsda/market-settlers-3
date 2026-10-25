@@ -5,6 +5,8 @@ import { fetchWikiMarketFeed } from '../src/lib/server/wiki-market';
 import {
 	WIKI_MARKET_PAGE,
 	wikiItemLabel,
+	wikiRegionLand,
+	wikiRegionName,
 	type WikiFeed,
 	type WikiTrade
 } from '../src/lib/wiki-market';
@@ -22,6 +24,7 @@ const moveCooldowns = new Map<string, number>();
 interface Mover {
 	key: string;
 	name: string;
+	place: string;
 	newAvg: number;
 	previousAvg: number;
 	changePct: number;
@@ -39,6 +42,12 @@ function notice(message: string): void {
 function publicDashboardUrl(path = ''): string | null {
 	const url = dashboardUrl(path);
 	return /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?(?:\/|$)/.test(url) ? null : url;
+}
+
+function placeLabel(region: number): string {
+	const land = wikiRegionLand(region);
+	const name = wikiRegionName(region);
+	return land ? `${land} / ${name}` : name;
 }
 
 async function alertChannelId(): Promise<string> {
@@ -76,24 +85,30 @@ function weighted(trades: WikiTrade[]): { qty: number; gold: number } {
 }
 
 function findMovers(feed: WikiFeed, newTrades: WikiTrade[], lastTs: number): Mover[] {
-	const byItem = new Map<string, WikiTrade[]>();
+	const byArea = new Map<string, { item: string; region: number; trades: WikiTrade[] }>();
 	for (const trade of newTrades) {
-		const list = byItem.get(trade.item) ?? [];
-		list.push(trade);
-		byItem.set(trade.item, list);
+		const key = `${trade.item}|${trade.region}`;
+		const group = byArea.get(key) ?? { item: trade.item, region: trade.region, trades: [] };
+		group.trades.push(trade);
+		byArea.set(key, group);
 	}
 
 	const cooldownMs = serverEnv.wikiMarketAlertCooldownMinutes * 60_000;
 	const cutoff = lastTs - 7 * DAY;
 	const movers: Mover[] = [];
 
-	for (const [key, trades] of byItem) {
+	for (const [key, group] of byArea) {
+		const { item, region, trades } = group;
 		const current = weighted(trades);
 		if (current.qty <= 0 || current.gold <= 0) continue;
 
 		const previous = weighted(
 			feed.trades.filter(
-				(trade) => trade.item === key && trade.ts <= lastTs && trade.ts >= cutoff
+				(trade) =>
+					trade.item === item &&
+					trade.region === region &&
+					trade.ts <= lastTs &&
+					trade.ts >= cutoff
 			)
 		);
 		if (previous.qty <= 0 || previous.gold <= 0) continue;
@@ -110,7 +125,8 @@ function findMovers(feed: WikiFeed, newTrades: WikiTrade[], lastTs: number): Mov
 
 		movers.push({
 			key,
-			name: wikiItemLabel(key, feed.items),
+			name: wikiItemLabel(item, feed.items),
+			place: placeLabel(region),
 			newAvg,
 			previousAvg,
 			changePct,
@@ -159,8 +175,9 @@ async function postMovers(
 				.map((mover) => {
 					const tradeLabel = mover.trades === 1 ? 'trade' : 'trades';
 					return (
-						`**${mover.name}** · ${formatPct(mover.changePct)} to **${formatPrice(mover.newAvg)}g** ` +
-						`(7d avg ${formatPrice(mover.previousAvg)}g) · ${formatQty(mover.qty)} sold in ` +
+						`**${mover.name}** · ${mover.place} · ${formatPct(mover.changePct)} to ` +
+						`**${formatPrice(mover.newAvg)}g** (7d avg ${formatPrice(mover.previousAvg)}g) · ` +
+						`${formatQty(mover.qty)} sold in ` +
 						`${formatQty(mover.trades)} ${tradeLabel}`
 					);
 				})
@@ -192,30 +209,38 @@ async function postSummary(
 	const channel = await resolveChannel(client);
 	if (!channel) return false;
 
-	const groups = new Map<string, { qty: number; gold: number; trades: number }>();
+	const groups = new Map<
+		string,
+		{ item: string; region: number; qty: number; gold: number; trades: number }
+	>();
 	for (const trade of trades) {
-		const group = groups.get(trade.item) ?? { qty: 0, gold: 0, trades: 0 };
+		const key = `${trade.item}|${trade.region}`;
+		const group =
+			groups.get(key) ?? { item: trade.item, region: trade.region, qty: 0, gold: 0, trades: 0 };
 		group.qty += trade.qty;
 		group.gold += trade.gold;
 		group.trades += 1;
-		groups.set(trade.item, group);
+		groups.set(key, group);
 	}
 
-	const ranked = [...groups.entries()]
-		.sort((a, b) => b[1].gold - a[1].gold || b[1].qty - a[1].qty)
+	const ranked = [...groups.values()]
+		.sort((a, b) => b.gold - a.gold || b.qty - a.qty)
 		.slice(0, 6);
 	const total = weighted(trades);
-	const lines = ranked.map(([key, group]) => {
+	const itemCount = new Set(trades.map((trade) => trade.item)).size;
+	const lines = ranked.map((group) => {
 		const average = group.gold / group.qty;
 		return (
-			`**${wikiItemLabel(key, feed.items)}** · ${formatQty(group.qty)} sold · ` +
-			`avg ${formatPrice(average)}g · ${formatQty(group.trades)} ${group.trades === 1 ? 'trade' : 'trades'}`
+			`**${wikiItemLabel(group.item, feed.items)}** · ${placeLabel(group.region)} · ` +
+			`${formatQty(group.qty)} sold · avg ${formatPrice(average)}g · ` +
+			`${formatQty(group.trades)} ${group.trades === 1 ? 'trade' : 'trades'}`
 		);
 	});
 
 	const openShops = feed.shops.filter((shop) => shop.state === 'open').length;
+	const latest = trades[trades.length - 1];
 	const start = trades[0].ts;
-	const end = trades[trades.length - 1].ts;
+	const end = latest.ts;
 	const embed = new EmbedBuilder()
 		.setColor(COLORS.neutral)
 		.setAuthor({ name: 'Market pulse · live shop feed' })
@@ -223,8 +248,9 @@ async function postSummary(
 		.setURL(WIKI_MARKET_PAGE)
 		.setDescription(
 			lines.length
-				? `${lines.join('\n')}\n\nLatest: **${wikiItemLabel(trades[trades.length - 1].item, feed.items)}** · ` +
-						`${formatQty(trades[trades.length - 1].qty)} for ${formatPrice(trades[trades.length - 1].gold)}g`
+				? `${lines.join('\n')}\n\nLatest: **${wikiItemLabel(latest.item, feed.items)}** · ` +
+						`${placeLabel(latest.region)} · ${formatQty(latest.qty)} for ` +
+						`${formatPrice(latest.gold)}g`
 				: 'No shop trades in this window.'
 		)
 		.addFields(
@@ -235,7 +261,7 @@ async function postSummary(
 			},
 			{
 				name: 'Activity',
-				value: `${formatQty(trades.length)} trades · ${formatQty(groups.size)} items`,
+				value: `${formatQty(trades.length)} trades · ${formatQty(itemCount)} items`,
 				inline: true
 			},
 			{

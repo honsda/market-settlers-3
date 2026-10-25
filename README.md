@@ -14,7 +14,7 @@ Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v
 - **Live updates** — offers posted on the website or from Discord appear everywhere within a second via Server-Sent Events.
 - **Embedded live map** — the server Dynmap is framed in the app, with one-click deep links to offer coordinates and a live online-player list.
 - **News & dispatches** — a `/news` section with market announcements, trading guides and community notes, including individual article pages with an in-page contents rail.
-- **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme. It also posts a batched market pulse and significant shop-price moves from the official feed.
+- **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme. It also posts a batched market pulse and significant shop-price moves from the official feed, with the island/area and region named.
 - **No accounts** — your IGN/guild profile lives in your browser; each offer you create gets a local edit token so only you can cancel it.
 - **Demo mode** — `npm run db:seed` fills the board with believable traders and two weeks of price history.
 - **Supabase-ready schema** — a complete Postgres schema with RLS, indexes, an alert queue and an atomic revision counter lives in `supabase/schema.sql`.
@@ -99,8 +99,9 @@ The server writes that file about every 60 seconds. All prices in it are **gold 
 The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) and:
 
 - posts a batched **market pulse** to the configured market channel every `WIKI_MARKET_SUMMARY_MINUTES` (default **30m**) when new trades have happened;
-- posts an immediate **market move** alert when a new trade's average is at least `WIKI_MARKET_ALERT_THRESHOLD_PCT` (default **12%**) away from that item's previous 7-day average;
-- suppresses repeat move alerts for the same item for `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` (default **60m**).
+- posts an immediate **market move** alert when a new trade's average is at least `WIKI_MARKET_ALERT_THRESHOLD_PCT` (default **12%**) away from that item's previous 7-day average **in the same region**;
+- labels every pulse and move with the island/area and region (for example `Rainlands / Morvethan`);
+- suppresses repeat move alerts for the same item + region for `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` (default **60m**).
 
 The cursor is stored in `meta` (`wiki:last_trade_ts`, `wiki:last_summary_at`, `wiki:last_feed_generated`), so restarting the bot does not replay old trades. On first start it begins from the newest trade in the feed.
 

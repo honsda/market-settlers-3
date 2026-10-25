@@ -249,7 +249,7 @@
 		>
 			<span>
 				Showing {formatQty(rows.length)} of {formatQty(data.items.length)} items · prices in gold nuggets
-				per item · best prices can be in different regions.
+				per item · best prices can be in different regions · 24h move is global across regions.
 			</span>
 			<span>
 				Source: <a href={WIKI_MARKET_PAGE} target="_blank" rel="noreferrer" class="text-mist-400 underline decoration-white/20 underline-offset-2 hover:text-mist-200">wiki.settlers-mc.org</a>
