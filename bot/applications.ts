@@ -23,9 +23,12 @@ import { COLORS } from './format';
 /**
  * Membership applications.
  *
- * `/apply` only works in a channel called #apply. The bot then asks the three
+ * `/apply` only works in a channel called #apply. The bot then asks the five
  * questions in DMs and drops the finished form in #staff-verify (created on
  * demand, visible to administrators only) with Approve / Deny buttons.
+ *
+ * `/initapply` posts or refreshes the guide embed in #apply, and every other
+ * message in that channel is removed automatically so it stays readable.
  *
  * In-flight answers, submitted forms and configuration live in the shared
  * `meta` key/value store, so a bot restart does not lose anything.
@@ -43,8 +46,9 @@ const STATE_TTL_MS = 60 * 60 * 1000;
 const IGN_PATTERN = /^[A-Za-z0-9_]{3,16}$/;
 const MIN_ANSWER = 3;
 const MAX_ANSWER = 900;
+const QUESTION_COUNT = 5;
 
-type Step = 'ign' | 'reason' | 'goals';
+type Step = 'ign' | 'age' | 'timezone' | 'reason' | 'goals';
 type Decision = 'pending' | 'approved' | 'denied';
 
 interface DmState {
@@ -52,6 +56,8 @@ interface DmState {
 	guildId: string;
 	startedAt: number;
 	ign?: string;
+	age?: number;
+	timezone?: string;
 	reason?: string;
 	goals?: string;
 }
@@ -64,6 +70,8 @@ interface Application {
 	displayName: string;
 	avatarUrl: string;
 	ign: string;
+	age?: number;
+	timezone?: string;
 	reason: string;
 	goals: string;
 	createdAt: number;
@@ -79,6 +87,7 @@ const pendingKey = () => 'apply:pending';
 const staffKey = (guildId: string) => `apply:staff_channel:${guildId}`;
 const dwellerKey = (guildId: string) => `apply:dweller_role:${guildId}`;
 const citizenKey = (guildId: string) => `apply:citizen_role:${guildId}`;
+const guideKey = (guildId: string) => `apply:guide_message:${guildId}`;
 
 async function readJson<T>(key: string): Promise<T | null> {
 	const raw = await getMeta(key);
@@ -273,6 +282,126 @@ export async function syncGuild(guild: Guild): Promise<void> {
 	}
 }
 
+function applicationGuideEmbed(guild: Guild): EmbedBuilder {
+	const bot = guild.client.user ? `<@${guild.client.user.id}>` : 'The bot';
+	return new EmbedBuilder()
+		.setColor(DWELLER_COLOR)
+		.setAuthor({ name: `Join ${guild.name}` })
+		.setTitle('How to apply')
+		.setDescription(
+			`${bot} handles applications in this channel. Run \`/apply\` below to begin — the questions are answered in your DMs.`
+		)
+		.addFields(
+			{ name: '1 · Start', value: 'Run `/apply` in this channel. Other messages here are removed automatically.' },
+			{
+				name: '2 · Answer in DMs',
+				value: `Reply to the ${QUESTION_COUNT} questions in the bot’s DM. Type \`cancel\` at any time to stop.`
+			},
+			{
+				name: '3 · Wait for review',
+				value: 'Staff review every application privately. You will get a DM with the decision.'
+			},
+			{
+				name: 'What we ask',
+				value: '• Minecraft IGN\n• Age (13+)\n• Timezone and usual play times\n• Why you want to join\n• What you want to do or contribute'
+			},
+			{
+				name: 'Before you start',
+				value: 'You must be 13+ and have **Direct Messages** from server members enabled.'
+			}
+		)
+		.setFooter({ text: 'Settlers III · Applications' });
+}
+
+/** `/initapply` — post or refresh the guide embed in #apply. */
+export async function postApplicationGuide(
+	interaction: ChatInputCommandInteraction
+): Promise<void> {
+	const guild = interaction.guild;
+	if (!guild) {
+		await interaction.reply(ephemeral('This command only works inside a server.'));
+		return;
+	}
+
+	if (!hasStaffPermission(interaction.memberPermissions)) {
+		await interaction.reply(
+			ephemeral('You need the **Manage Server** permission to post the application guide.')
+		);
+		return;
+	}
+
+	const channel = interaction.channel;
+	if (
+		!channel ||
+		channel.type !== ChannelType.GuildText ||
+		channel.name.toLowerCase() !== APPLY_CHANNEL
+	) {
+		await interaction.reply(
+			ephemeral(
+				`Run this in the **#${APPLY_CHANNEL}** text channel so the guide lands in the right place.`
+			)
+		);
+		return;
+	}
+
+	await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+	const key = guideKey(guild.id);
+	const storedId = await getMeta(key);
+	let message = storedId ? await channel.messages.fetch(storedId).catch(() => null) : null;
+	let action: 'posted' | 'updated' = 'posted';
+
+	if (message) {
+		try {
+			await message.edit({ embeds: [applicationGuideEmbed(guild)] });
+			action = 'updated';
+		} catch {
+			message = null;
+		}
+	}
+
+	if (!message) {
+		message = await channel.send({ embeds: [applicationGuideEmbed(guild)] });
+		await setMeta(key, message.id);
+	}
+
+	// Pinning is best-effort; the guide is still useful without it.
+	await message.pin().catch(() => undefined);
+
+	await interaction.editReply({
+		content: `Application guide ${action} in <#${channel.id}>.`
+	});
+}
+
+let lastApplyDeleteWarning = 0;
+
+/**
+ * Keep #apply clean. The bot's own messages (the /initapply guide) stay; every
+ * other message is removed. Keeping all bot messages also avoids a race where
+ * the guide's gateway event arrives before its message id is stored.
+ */
+export async function handleApplyChannelMessage(message: Message): Promise<void> {
+	if (!message.guild) return;
+	const channel = message.channel;
+	if (channel.type !== ChannelType.GuildText || channel.name.toLowerCase() !== APPLY_CHANNEL) {
+		return;
+	}
+	if (!message.system && message.author.id === message.client.user?.id) return;
+
+	try {
+		await message.delete();
+	} catch (error) {
+		const now = Date.now();
+		if (now - lastApplyDeleteWarning > 60_000) {
+			lastApplyDeleteWarning = now;
+			console.error(
+				'[bot] Could not delete a message in #apply. Give the bot Manage Messages:',
+				error instanceof Error ? error.message : error
+			);
+		}
+	}
+}
+
 /** Give a new member the Dweller role. */
 export async function addDwellerRole(member: GuildMember): Promise<void> {
 	try {
@@ -294,15 +423,70 @@ function questionEmbed(guildName: string, question: string): EmbedBuilder {
 		.setFooter({ text: 'Reply here in DMs · type “cancel” to stop' });
 }
 
-const FIRST_QUESTION =
-	'**Question 1 of 3**\nWhat is your Minecraft in-game name (IGN)?\n\n_3–16 letters, numbers or underscores._';
-const SECOND_QUESTION =
-	'**Question 2 of 3**\nWhy did you join the server?';
-const THIRD_QUESTION =
-	'**Question 3 of 3**\nWhat do you want to do here? (build, trade, explore, join a town…)';
+const QUESTIONS: Record<Step, (guildName: string) => string> = {
+	ign: () =>
+		`**Question 1 of ${QUESTION_COUNT}**\nWhat is your Minecraft in-game name (IGN)?\n\n_3–16 letters, numbers or underscores._`,
+	age: () =>
+		`**Question 2 of ${QUESTION_COUNT}**\nHow old are you?\n\n_You must be at least 13 to use Discord and apply._`,
+	timezone: () =>
+		`**Question 3 of ${QUESTION_COUNT}**\nWhat is your timezone, and when are you usually online?\n\n_Example: GMT+1, weekday evenings and weekends._`,
+	reason: (guildName) =>
+		`**Question 4 of ${QUESTION_COUNT}**\nWhy do you want to join **${guildName}**?`,
+	goals: () =>
+		`**Question 5 of ${QUESTION_COUNT}**\nWhat do you want to do or contribute here? (build, trade, explore, join a town, help others…)`
+};
+
+const NEXT_STEP: Record<Step, Step | null> = {
+	ign: 'age',
+	age: 'timezone',
+	timezone: 'reason',
+	reason: 'goals',
+	goals: null
+};
 
 function truncate(value: string, max: number): string {
 	return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+type AnswerCheck = { ok: true } | { ok: false; error: string; cancel?: boolean };
+
+function checkAnswer(step: Step, content: string): AnswerCheck {
+	if (step === 'ign') {
+		return IGN_PATTERN.test(content)
+			? { ok: true }
+			: {
+					ok: false,
+					error:
+						'That does not look like a Minecraft username. Use 3–16 letters, numbers or underscores.'
+				};
+	}
+
+	if (step === 'age') {
+		if (!/^\d{1,3}$/.test(content)) {
+			return { ok: false, error: 'Please reply with your age as a number between 13 and 120.' };
+		}
+		const age = Number(content);
+		if (age < 13) {
+			return {
+				ok: false,
+				error:
+					'You must be at least 13 to use Discord and apply. This application has been cancelled.',
+				cancel: true
+			};
+		}
+		if (age > 120) {
+			return { ok: false, error: 'Please enter a realistic age between 13 and 120.' };
+		}
+		return { ok: true };
+	}
+
+	if (content.length < MIN_ANSWER) {
+		return { ok: false, error: 'Please write a little more than that.' };
+	}
+	if (content.length > MAX_ANSWER) {
+		return { ok: false, error: `Keep it under ${MAX_ANSWER} characters, please.` };
+	}
+	return { ok: true };
 }
 
 function applicationEmbed(app: Application, guild: Guild): EmbedBuilder {
@@ -317,6 +501,12 @@ function applicationEmbed(app: Application, guild: Guild): EmbedBuilder {
 		.addFields(
 			{ name: 'Submitted', value: `<t:${Math.floor(app.createdAt / 1000)}:R>`, inline: true },
 			{ name: 'Server', value: guild.name, inline: true },
+			{ name: 'Age', value: app.age != null ? String(app.age) : '—', inline: true },
+			{
+				name: 'Timezone / activity',
+				value: app.timezone ? truncate(app.timezone, 1024) : '—',
+				inline: true
+			},
 			{ name: 'Why they joined', value: truncate(app.reason, 1024) },
 			{ name: 'What they want to do', value: truncate(app.goals, 1024) }
 		)
@@ -403,7 +593,7 @@ export async function startApplication(interaction: ChatInputCommandInteraction)
 
 	try {
 		await interaction.user.send({
-			embeds: [questionEmbed(guild.name, FIRST_QUESTION)]
+			embeds: [questionEmbed(guild.name, QUESTIONS.ign(guild.name))]
 		});
 	} catch {
 		await setMeta(stateKey(interaction.user.id), null);
@@ -467,6 +657,8 @@ async function submitApplication(
 		displayName: message.author.displayName,
 		avatarUrl: message.author.displayAvatarURL({ size: 128 }),
 		ign: state.ign ?? '',
+		age: state.age,
+		timezone: state.timezone ?? '',
 		reason: state.reason ?? '',
 		goals: state.goals ?? '',
 		createdAt: Date.now(),
@@ -530,6 +722,8 @@ async function submitApplication(
 			)
 			.addFields(
 				{ name: 'IGN', value: `\`${app.ign}\``, inline: true },
+				{ name: 'Age', value: app.age != null ? String(app.age) : '—', inline: true },
+				{ name: 'Timezone / activity', value: truncate(app.timezone || '—', 1024) },
 				{ name: 'Why you joined', value: truncate(app.reason, 1024) },
 				{ name: 'What you want to do', value: truncate(app.goals, 1024) }
 			)
@@ -574,72 +768,43 @@ export async function handleApplicationDm(message: Message): Promise<void> {
 	const guild = message.client.guilds.cache.get(state.guildId);
 	const guildName = guild?.name ?? 'the server';
 
-	if (state.step === 'ign') {
-		if (!IGN_PATTERN.test(content)) {
-			await sendDm(
-				channel,
-				new EmbedBuilder()
-					.setColor(COLORS.danger)
-					.setDescription(
-						'That does not look like a Minecraft username. Use 3–16 letters, numbers or underscores.'
-					)
-			);
-			return;
-		}
-		state.ign = content;
-		state.step = 'reason';
-		await writeJson(key, state);
-		await sendDm(channel, questionEmbed(guildName, SECOND_QUESTION));
-		return;
-	}
-
-	if (state.step === 'reason') {
-		if (content.length < MIN_ANSWER) {
-			await sendDm(
-				channel,
-				new EmbedBuilder()
-					.setColor(COLORS.danger)
-					.setDescription('Please write a little more than that.')
-			);
-			return;
-		}
-		if (content.length > MAX_ANSWER) {
-			await sendDm(
-				channel,
-				new EmbedBuilder()
-					.setColor(COLORS.danger)
-					.setDescription(`Keep it under ${MAX_ANSWER} characters, please.`)
-			);
-			return;
-		}
-		state.reason = content;
-		state.step = 'goals';
-		await writeJson(key, state);
-		await sendDm(channel, questionEmbed(guildName, THIRD_QUESTION));
-		return;
-	}
-
-	if (content.length < MIN_ANSWER) {
+	const check = checkAnswer(state.step, content);
+	if (!check.ok) {
+		if (check.cancel) await setMeta(key, null);
 		await sendDm(
 			channel,
-			new EmbedBuilder()
-				.setColor(COLORS.danger)
-				.setDescription('Please write a little more than that.')
-		);
-		return;
-	}
-	if (content.length > MAX_ANSWER) {
-		await sendDm(
-			channel,
-			new EmbedBuilder()
-				.setColor(COLORS.danger)
-				.setDescription(`Keep it under ${MAX_ANSWER} characters, please.`)
+			new EmbedBuilder().setColor(COLORS.danger).setDescription(check.error)
 		);
 		return;
 	}
 
-	state.goals = content;
-	await submitApplication(state, message);
+	if (state.step === 'goals') {
+		state.goals = content;
+		await submitApplication(state, message);
+		return;
+	}
+
+	switch (state.step) {
+		case 'ign':
+			state.ign = content;
+			break;
+		case 'age':
+			state.age = Number(content);
+			break;
+		case 'timezone':
+			state.timezone = content;
+			break;
+		case 'reason':
+			state.reason = content;
+			break;
+	}
+
+	const next = NEXT_STEP[state.step];
+	if (!next) return;
+
+	state.step = next;
+	await writeJson(key, state);
+	await sendDm(channel, questionEmbed(guildName, QUESTIONS[next](guildName)));
 }
 
 /** Approve / deny buttons in #staff-verify. */

@@ -36,6 +36,7 @@ import { COLORS, dashboardUrl, footer, offerEmbed } from './format';
 import {
 	configureCitizenRole,
 	handleApplicationButton,
+	postApplicationGuide,
 	startApplication
 } from './applications';
 
@@ -164,8 +165,14 @@ export const commandData = [
 
 	new SlashCommandBuilder()
 		.setName('apply')
-		.setDescription('Apply to join — the bot asks three questions in your DMs.')
+		.setDescription('Apply to join — the bot asks five questions in your DMs.')
 		.setContexts(InteractionContextType.Guild),
+
+	new SlashCommandBuilder()
+		.setName('initapply')
+		.setDescription('Post or refresh the application instructions in #apply.')
+		.setContexts(InteractionContextType.Guild)
+		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
 	new SlashCommandBuilder()
 		.setName('rolecitizen')
@@ -519,6 +526,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
 		case 'apply': {
 			await startApplication(interaction);
+			return;
+		}
+
+		case 'initapply': {
+			await postApplicationGuide(interaction);
 			return;
 		}
 

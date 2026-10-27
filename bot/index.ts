@@ -10,7 +10,7 @@ import {
 } from 'discord.js';
 import { botConfig, requireToken } from './config';
 import { handleAutocomplete, handleButton, handleCommand } from './commands';
-import { addDwellerRole, handleApplicationDm, syncGuild } from './applications';
+import { addDwellerRole, handleApplicationDm, handleApplyChannelMessage, syncGuild } from './applications';
 import { registerCommands } from './register';
 import { startAlertWatcher, stopAlertWatcher } from './watcher';
 import { startWikiMarketWatcher, stopWikiMarketWatcher } from './wiki-market';
@@ -23,6 +23,7 @@ const client = new Client({
 	intents: [
 		GatewayIntentBits.Guilds,
 		GatewayIntentBits.GuildMembers,
+		GatewayIntentBits.GuildMessages,
 		GatewayIntentBits.DirectMessages
 	],
 	// DM channels are not cached until the bot sends something, so Partials.Channel
@@ -142,11 +143,22 @@ client.on(Events.GuildMemberAdd, (member) => {
 
 // Application questions are answered in DMs. Messages sent to the bot in DMs
 // are exempt from the Message Content intent, so no extra privilege is needed.
+// Guild messages are only used to keep #apply clean; their content is never read.
 client.on(Events.MessageCreate, (message) => {
-	if (message.author.bot || !message.channel.isDMBased()) return;
-	void handleApplicationDm(message).catch((error) => {
+	if (message.channel.isDMBased()) {
+		if (message.author.bot) return;
+		void handleApplicationDm(message).catch((error) => {
+			console.error(
+				'[bot] Application DM failed:',
+				error instanceof Error ? error.stack ?? error.message : error
+			);
+		});
+		return;
+	}
+
+	void handleApplyChannelMessage(message).catch((error) => {
 		console.error(
-			'[bot] Application DM failed:',
+			'[bot] #apply cleanup failed:',
 			error instanceof Error ? error.stack ?? error.message : error
 		);
 	});

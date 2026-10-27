@@ -30,7 +30,7 @@ export async function getBotStatus(): Promise<BotStatus> {
 		cooldownMinutes: serverEnv.alertCooldownMinutes,
 		pollSeconds: serverEnv.alertPollSeconds,
 		inviteUrl: clientId
-			? `https://discord.com/api/oauth2/authorize?client_id=${clientId}&scope=bot%20applications.commands&permissions=268520464`
+			? `https://discord.com/api/oauth2/authorize?client_id=${clientId}&scope=bot%20applications.commands&permissions=268528656`
 			: null
 	};
 }
