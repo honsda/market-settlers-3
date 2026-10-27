@@ -161,7 +161,7 @@ export const NEWS: NewsArticle[] = [
 			{ type: 'h2', text: 'Set the channel once' },
 			{
 				type: 'p',
-				text: 'Run /alerts in your server and pick a text or announcement channel. The command needs the Manage Server permission, and the bot only needs Send Messages to post. The choice is stored in the shared database, so it survives restarts and does not need to be repeated.'
+				text: 'Run /alerts in your server and pick a text or announcement channel. The command needs the Manage Server permission, and posting alerts still only needs Send Messages. The choice is stored in the shared database, so it survives restarts and does not need to be repeated.'
 			},
 			{
 				type: 'callout',

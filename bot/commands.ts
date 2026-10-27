@@ -33,6 +33,11 @@ import {
 import { parseOfferInput } from '../src/lib/server/validation';
 import { setMeta } from '../src/lib/server/db';
 import { COLORS, dashboardUrl, footer, offerEmbed } from './format';
+import {
+	configureCitizenRole,
+	handleApplicationButton,
+	startApplication
+} from './applications';
 
 export const commandData = [
 	new SlashCommandBuilder()
@@ -155,6 +160,25 @@ export const commandData = [
 				.setDescription('Channel for price alerts')
 				.setRequired(true)
 				.addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+		),
+
+	new SlashCommandBuilder()
+		.setName('apply')
+		.setDescription('Apply to join — the bot asks three questions in your DMs.')
+		.setContexts(InteractionContextType.Guild),
+
+	new SlashCommandBuilder()
+		.setName('rolecitizen')
+		.setDescription('Set the role members receive once their application is approved.')
+		.setContexts(InteractionContextType.Guild)
+		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+		.addRoleOption((option) =>
+			option
+				.setName('role')
+				.setDescription('Role for approved members (omit to create or use “Citizen”)')
+		)
+		.addUserOption((option) =>
+			option.setName('member').setDescription('Also give the role to this member right now')
 		)
 ];
 
@@ -493,6 +517,16 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 			return;
 		}
 
+		case 'apply': {
+			await startApplication(interaction);
+			return;
+		}
+
+		case 'rolecitizen': {
+			await configureCitizenRole(interaction);
+			return;
+		}
+
 		default:
 			throw new Error(`Unknown command: ${interaction.commandName}`);
 	}
@@ -516,6 +550,11 @@ export async function handleAutocomplete(interaction: AutocompleteInteraction): 
 }
 
 export async function handleButton(interaction: ButtonInteraction): Promise<void> {
+	if (interaction.customId.startsWith('apply:')) {
+		await handleApplicationButton(interaction);
+		return;
+	}
+
 	const [scope, action, offerId, token] = interaction.customId.split(':');
 	if (scope !== 'offer' || action !== 'cancel' || !offerId || !token) return;
 

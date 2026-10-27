@@ -12,7 +12,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"bot": "tsx watch bot/index.ts",
-		"bot:start": "tsx bot/index.ts",
+		"bot:start": "tsx --tsconfig tsconfig.bot.json bot/index.ts",
 		"bot:deploy": "tsx bot/deploy-commands.ts",
 		"db:seed": "tsx scripts/seed.ts",
 		"db:reset": "tsx scripts/reset.ts && tsx scripts/seed.ts",
@@ -29,13 +29,13 @@
 		"svelte": "^5.57.1",
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.3.3",
-		"tsx": "^4.20.6",
 		"typescript": "^6.0.3",
 		"vite": "^8.3.0"
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.118.0",
-		"discord.js": "^14.27.0"
+		"discord.js": "^14.27.0",
+		"tsx": "^4.20.6"
 	},
 	"allowScripts": {
 		"esbuild": true,

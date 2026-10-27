@@ -59,11 +59,10 @@ npm run dev:all
    DISCORD_ALERT_CHANNEL_ID=...      # market channel; can also be set with /alerts
    ```
 
-3. Invite the bot with the `bot` and `applications.commands` scopes. **Send Messages** is the only permission it needs; `/alerts` additionally checks for **Manage Server** on the person running it.
-4. Run `npm run bot:deploy` once (or just `npm run bot` — it registers commands on startup).
-5. Start it with `npm run bot` or `npm run dev:all`.
-
-No privileged intents (message content, members, presence) are required — only `Guilds`.
+3. Invite the bot with the `bot` and `applications.commands` scopes. Grant **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Roles** and **Manage Channels**. The last two let it create the Dweller role and the admin-only `#staff-verify` channel; `/alerts` and `/rolecitizen` additionally check for **Manage Server** on the person running them.
+4. Under **Bot → Privileged Gateway Intents**, enable **Server Members** (needed for join roles and member lookups). Message Content is not needed — DMs sent to the bot are exempt.
+5. Run `npm run bot:deploy` once (or just `npm run bot` — it registers commands on startup).
+6. Start it with `npm run bot` or `npm run dev:all`.
 
 ### Slash commands
 
@@ -75,14 +74,51 @@ No privileged intents (message content, members, presence) are required — only
 | `/player ign:<name>` | Guild, open offers, locked value and last activity for a trader. |
 | `/post side item quantity price ign [guild] [contact] [note] [x] [y] [z]` | Publish an offer straight from Discord. The reply is ephemeral and includes a **Cancel this offer** button. |
 | `/alerts channel:<#channel>` | Point market alerts at a channel. Requires **Manage Server**. |
+| `/apply` | Starts a membership application. Only works in a channel named **#apply**; the three questions are asked in DMs. |
+| `/rolecitizen [role] [member]` | Choose the role approved applicants receive (creates **Citizen** when omitted) and optionally give it to someone now. Requires **Manage Server**. |
 
 Item options use Discord autocomplete backed by the shared catalogue in `src/lib/market.ts`.
+
+### Applications and roles
+
+1. A member runs `/apply` in **#apply**. Any other channel is refused with a pointer to the right one, and each member can have only one pending form per server.
+2. The bot sends three questions in DMs: **IGN** (3–16 letters, numbers or underscores), **why they joined**, and **what they want to do**. Typing `cancel` stops the flow; unfinished conversations expire after an hour.
+3. The finished form is posted to **#staff-verify** with **Approve** and **Deny** buttons. If that channel does not exist the bot creates it with `@everyone` denied **View Channel** — Discord administrators bypass channel overwrites, so it is admin-only. Anyone with **Manage Server** can review.
+4. **Approve** gives the configured citizen role (created on demand as **Citizen**) and DMs the applicant; **Deny** DMs them without changing roles. `/rolecitizen role:<@role>` changes the role, and `/rolecitizen member:<@user>` grants it manually.
+5. Every new member automatically receives **Dweller**, created with the light blue-grey colour `#9FB4C7`. Dweller stays as the base role after approval.
+
+Application answers, submitted forms and decisions live in the shared `meta` table (`apply:*` keys), so a restart does not lose an in-flight review.
 
 ### How alerts work
 
 Every offer mutation snapshots the item's best bid/ask into `price_history`. When a price moves more than `ALERT_THRESHOLD_PCT` (default **8%**), or sets a new 7-day high/low, a row is written to the `alerts` table. The bot polls that queue every `ALERT_POLL_SECONDS` (default 20s) and posts an embed to the configured channel. Alerts are marked as posted only after Discord accepts them, so nothing is lost if the bot is briefly offline.
 
 Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default 45) to keep the feed readable.
+
+### Deploy the bot on Northflank
+
+The repo ships a `Dockerfile`, so Northflank can build it without extra configuration. The bot is a **worker**, not a website: it holds a Discord gateway connection and does not listen on a port.
+
+1. Northflank → **Create service** → **Build from Git** → connect `honsda/market-settlers-3` on `main`.
+2. Build type: **Dockerfile** (auto-detected at the repository root).
+3. Service type: **Worker**. Do not expose or health-check a port.
+4. Instance: the free **Sandbox** plan is enough (the bot idles around 100–200 MB).
+5. Add the environment variables below, then deploy. On the first boot the bot registers its slash commands and creates the `Dweller` role and `#staff-verify` channel.
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `DISCORD_TOKEN` | yes | Bot token from the Developer Portal. |
+| `DISCORD_CLIENT_ID` | yes | Application ID, used for command registration and the invite link. |
+| `DISCORD_GUILD_ID` | recommended | Makes new slash commands appear instantly. |
+| `APP_URL` | yes | Your Vercel URL, used in Discord links. |
+| `SUPABASE_URL` | yes | Shared database with the Vercel deployment. |
+| `SUPABASE_SECRET_KEY` | yes | Server-side key; never expose it to the browser. |
+| `DISCORD_ALERT_CHANNEL_ID` | optional | Can also be set later with `/alerts`. |
+| `ALERT_*`, `WIKI_MARKET_*` | optional | Tuning values described in `.env.example`. |
+
+Do **not** set `MARKET_BACKEND=sqlite` on Northflank — the container filesystem is ephemeral and the web app on Vercel cannot share it. With Supabase configured the bot is fully stateless and restarts safely.
+
+The image runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.ts`). `tsx` is a runtime dependency, so `npm ci --omit=dev` is enough, and `tsconfig.bot.json` avoids depending on the generated SvelteKit config inside the container.
 
 ---
 
@@ -101,6 +137,7 @@ The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) and:
 - posts a batched **market pulse** to the configured market channel every `WIKI_MARKET_SUMMARY_MINUTES` (default **30m**) when new trades have happened;
 - posts an immediate **market move** alert when a new trade's average is at least `WIKI_MARKET_ALERT_THRESHOLD_PCT` (default **12%**) away from that item's previous 7-day average **in the same region**;
 - labels every pulse and move with the island/area and region (for example `Rainlands / Morvethan`);
+- uses one Discord field per item + area, with volume, average, gold traded and current best shop prices, so updates stay readable without losing detail;
 - suppresses repeat move alerts for the same item + region for `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` (default **60m**).
 
 The cursor is stored in `meta` (`wiki:last_trade_ts`, `wiki:last_summary_at`, `wiki:last_feed_generated`), so restarting the bot does not replay old trades. On first start it begins from the newest trade in the feed.
@@ -233,6 +270,7 @@ src/
 bot/
   index.ts                 Discord client, heartbeat, interactions
   commands.ts              slash commands, autocomplete, cancel button
+  applications.ts          /apply DM flow, #staff-verify review, join roles
   watcher.ts               queued alert delivery
   wiki-market.ts           shop-feed pulse and market-move posts
   register.ts              REST command registration
@@ -245,6 +283,8 @@ supabase/
   schema.sql               Postgres tables, indexes, RLS and revision RPC
 data/
   market.db                created on first run (gitignored)
+Dockerfile                 production image for the Discord bot (Northflank)
+tsconfig.bot.json          container-safe TypeScript config for `bot:start`
 ```
 
 ### Data model
@@ -252,7 +292,7 @@ data/
 - `offers` — one row per open/closed offer, with `source` (`web`, `discord`, `seed`) and an `edit_token` returned only to the creator.
 - `price_history` — best bid/ask snapshots per item, written whenever an offer changes the book.
 - `alerts` — significant-move queue with `posted_at` / `discord_message_id` for reliable delivery.
-- `meta` — revision counter (drives SSE), bot heartbeat, alert channel and other small values.
+- `meta` — revision counter (drives SSE), bot heartbeat, alert channel, application state and other small values.
 
 The browser keeps a local profile (`IGN`, guild, contact) and per-offer edit tokens in `localStorage`. There are no passwords or user accounts.
 

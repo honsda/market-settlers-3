@@ -42,6 +42,16 @@
 			name: '/alerts',
 			args: 'channel',
 			description: 'Point price alerts at a channel. Needs Manage Server.'
+		},
+		{
+			name: '/apply',
+			args: '—',
+			description: 'Apply to join in #apply. The bot asks three questions in DMs.'
+		},
+		{
+			name: '/rolecitizen',
+			args: 'role, member',
+			description: 'Pick the role given after an application is approved. Needs Manage Server.'
 		}
 	];
 
@@ -196,7 +206,7 @@
 						</span>
 						<div>
 							<h2 class="text-sm font-semibold tracking-tight text-mist-100">Connect your own bot</h2>
-							<p class="text-[11px] text-mist-500">Five minutes, no privileged intents required</p>
+							<p class="text-[11px] text-mist-500">Five minutes, two intents to switch on</p>
 						</div>
 					</div>
 				</div>
@@ -206,7 +216,7 @@
 						{#each [
 							'Create an application at discord.com/developers/applications and add a Bot.',
 							'Copy the bot token and Application ID into .env as DISCORD_TOKEN and DISCORD_CLIENT_ID.',
-							'Invite it with the bot + applications.commands scopes (Send Messages permission is enough).',
+							'Enable the Server Members intent, then invite the bot with Manage Roles and Manage Channels.',
 							'Copy an alert channel ID into DISCORD_ALERT_CHANNEL_ID — or run /alerts in Discord.',
 							'Start the web app and bot together with npm run dev:all.'
 						] as step, index (index)}

@@ -4,10 +4,13 @@ import {
 	Events,
 	GatewayIntentBits,
 	MessageFlags,
+	Partials,
+	type Guild,
 	type Interaction
 } from 'discord.js';
 import { botConfig, requireToken } from './config';
 import { handleAutocomplete, handleButton, handleCommand } from './commands';
+import { addDwellerRole, handleApplicationDm, syncGuild } from './applications';
 import { registerCommands } from './register';
 import { startAlertWatcher, stopAlertWatcher } from './watcher';
 import { startWikiMarketWatcher, stopWikiMarketWatcher } from './wiki-market';
@@ -16,7 +19,16 @@ import { serverEnv } from '../src/lib/server/env';
 
 const token = requireToken();
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+	intents: [
+		GatewayIntentBits.Guilds,
+		GatewayIntentBits.GuildMembers,
+		GatewayIntentBits.DirectMessages
+	],
+	// DM channels are not cached until the bot sends something, so Partials.Channel
+	// is required to receive the first reply of an application conversation.
+	partials: [Partials.Channel]
+});
 
 let heartbeat: NodeJS.Timeout | null = null;
 let shuttingDown = false;
@@ -51,12 +63,21 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 	readyClient.user.setPresence({
 		status: 'online',
-		activities: [{ name: 'the Settlers III market', type: ActivityType.Watching }]
+		activities: [{ name: 'Settlers III', type: ActivityType.Watching }]
 	});
 
 	startHeartbeat();
 	startAlertWatcher(client);
 	startWikiMarketWatcher(client);
+
+	// Make sure the application role and review channel exist. With a pinned
+	// DISCORD_GUILD_ID only that server is touched, otherwise every guild.
+	const guilds: Guild[] = botConfig.guildId
+		? [readyClient.guilds.cache.get(botConfig.guildId)].filter(
+				(guild): guild is Guild => Boolean(guild)
+			)
+		: [...readyClient.guilds.cache.values()];
+	for (const guild of guilds) void syncGuild(guild);
 
 	try {
 		const scope = await registerCommands();
@@ -112,6 +133,23 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
 
 client.on(Events.Error, (error) => {
 	console.error('[bot] Gateway error:', error.message);
+});
+
+// New members get the light blue-grey Dweller role straight away.
+client.on(Events.GuildMemberAdd, (member) => {
+	void addDwellerRole(member);
+});
+
+// Application questions are answered in DMs. Messages sent to the bot in DMs
+// are exempt from the Message Content intent, so no extra privilege is needed.
+client.on(Events.MessageCreate, (message) => {
+	if (message.author.bot || !message.channel.isDMBased()) return;
+	void handleApplicationDm(message).catch((error) => {
+		console.error(
+			'[bot] Application DM failed:',
+			error instanceof Error ? error.stack ?? error.message : error
+		);
+	});
 });
 
 async function shutdown(signal: string): Promise<void> {
