@@ -95,15 +95,46 @@ Every offer mutation snapshots the item's best bid/ask into `price_history`. Whe
 
 Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default 45) to keep the feed readable.
 
-### Deploy the bot on Northflank
+### Deploy the bot
 
-The repo ships a `Dockerfile`, so Northflank can build it without extra configuration. The bot is a **worker**, not a website: it holds a Discord gateway connection and does not listen on a port.
+The bot is a long-running gateway worker: it keeps a WebSocket connection to Discord and does not listen on a port. It needs **Node.js 22.13+** (Node 24 recommended) and **Supabase** — free bot panels use ephemeral storage, so SQLite would reset on every restart.
+
+#### Wispbyte (free, no card)
+
+Wispbyte's free plan gives 512 MB RAM and 1 GB disk, runs 24/7, and does not ask for a payment method. Log into the panel every couple of weeks to keep the server active.
+
+1. **Create a server** and choose the **Node.js 22** Docker image (Node.js 24 also works).
+2. Open **Files** and either connect this GitHub repository (`honsda/market-settlers-3`, branch `main`) or upload the project. With GitHub, enable **Auto Update** if you want restarts to pull the latest commit.
+3. Open **Startup** and replace the startup command with:
+
+   ```bash
+   cd /home/container; if [[ -d .git ]] && [[ ${AUTO_UPDATE:-0} == "1" ]]; then git pull; fi; mkdir -p data; if [ -f package.json ]; then /usr/local/bin/npm install --omit=dev --no-audit --no-fund; fi; exec /home/container/node_modules/.bin/tsx --tsconfig tsconfig.bot.json bot/index.ts
+   ```
+
+   If the panel asks for a main/startup file, point it at `bot/index.ts` (or use **Use on startup** on that file). The command above is what actually runs the bot.
+
+4. Add the environment variables below under **Startup → Environment Variables**.
+5. Start the server. The console should show `Signed in as ...`; the bot registers its slash commands and creates `Dweller` and `#staff-verify` if they are missing.
+
+The startup command installs production dependencies (including `tsx`) on boot and runs the bot directly, so there is no build step. `tsconfig.bot.json` is used because the generated SvelteKit tsconfig is not present on the panel.
+
+If the Node image is older than 22.13, choose a newer one — `node:sqlite` is imported even when Supabase is the backend.
+
+If the console says `Missing main file`, set the startup/main file to `bot/index.ts` (or use **Use on startup** on it). If `npm install` fails with `EACCES ... /home/container/node_modules`, delete `node_modules` and `.npm` in **Files**, restart, and if it still fails ask Wispbyte support to check the volume ownership. The bot also needs the panel login every couple of weeks; otherwise the free server may be paused.
+
+#### Northflank / container hosts
+
+The repo also ships a `Dockerfile` for hosts that build containers. The bot is a **worker**, not a website: it holds a Discord gateway connection and does not listen on a port.
 
 1. Northflank → **Create service** → **Build from Git** → connect `honsda/market-settlers-3` on `main`.
 2. Build type: **Dockerfile** (auto-detected at the repository root).
 3. Service type: **Worker**. Do not expose or health-check a port.
 4. Instance: the free **Sandbox** plan is enough (the bot idles around 100–200 MB).
 5. Add the environment variables below, then deploy. On the first boot the bot registers its slash commands and creates the `Dweller` role and `#staff-verify` channel.
+
+The image runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.ts`). `tsx` is a runtime dependency, so `npm ci --omit=dev` is enough.
+
+#### Environment variables
 
 | Variable | Required | Notes |
 | --- | --- | --- |
@@ -116,9 +147,7 @@ The repo ships a `Dockerfile`, so Northflank can build it without extra configur
 | `DISCORD_ALERT_CHANNEL_ID` | optional | Can also be set later with `/alerts`. |
 | `ALERT_*`, `WIKI_MARKET_*` | optional | Tuning values described in `.env.example`. |
 
-Do **not** set `MARKET_BACKEND=sqlite` on Northflank — the container filesystem is ephemeral and the web app on Vercel cannot share it. With Supabase configured the bot is fully stateless and restarts safely.
-
-The image runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.ts`). `tsx` is a runtime dependency, so `npm ci --omit=dev` is enough, and `tsconfig.bot.json` avoids depending on the generated SvelteKit config inside the container.
+Do **not** set `MARKET_BACKEND=sqlite` on either host — the panel/container filesystem is ephemeral and the web app on Vercel cannot share it. With Supabase configured the bot is stateless and restarts safely.
 
 ---
 
@@ -283,7 +312,7 @@ supabase/
   schema.sql               Postgres tables, indexes, RLS and revision RPC
 data/
   market.db                created on first run (gitignored)
-Dockerfile                 production image for the Discord bot (Northflank)
+Dockerfile                 production image for the Discord bot (container hosts)
 tsconfig.bot.json          container-safe TypeScript config for `bot:start`
 ```
 
