@@ -23,12 +23,15 @@ const moveCooldowns = new Map<string, number>();
 
 interface Mover {
 	key: string;
+	item: string;
+	region: number;
 	name: string;
 	place: string;
 	newAvg: number;
 	previousAvg: number;
 	changePct: number;
 	qty: number;
+	gold: number;
 	trades: number;
 }
 
@@ -48,6 +51,34 @@ function placeLabel(region: number): string {
 	const land = wikiRegionLand(region);
 	const name = wikiRegionName(region);
 	return land ? `${land} / ${name}` : name;
+}
+
+function bestShopPrice(
+	feed: WikiFeed,
+	item: string,
+	region: number,
+	side: 'buy' | 'sell'
+): number | null {
+	let best: number | null = null;
+	for (const shop of feed.shops) {
+		if (shop.item !== item || shop.region !== region || shop.side !== side) continue;
+		if (shop.state !== 'open') continue;
+		for (const [quantity, gold] of shop.offers) {
+			if (quantity <= 0) continue;
+			const each = gold / quantity;
+			if (best === null || (side === 'sell' ? each < best : each > best)) best = each;
+		}
+	}
+	return best;
+}
+
+function shopPriceLine(feed: WikiFeed, item: string, region: number): string | null {
+	const ask = bestShopPrice(feed, item, region, 'sell');
+	const bid = bestShopPrice(feed, item, region, 'buy');
+	const parts: string[] = [];
+	if (ask !== null) parts.push(`Best for sale ${formatPrice(ask)}g`);
+	if (bid !== null) parts.push(`Best wanted ${formatPrice(bid)}g`);
+	return parts.length ? parts.join(' · ') : null;
 }
 
 async function alertChannelId(): Promise<string> {
@@ -125,12 +156,15 @@ function findMovers(feed: WikiFeed, newTrades: WikiTrade[], lastTs: number): Mov
 
 		movers.push({
 			key,
+			item,
+			region,
 			name: wikiItemLabel(item, feed.items),
 			place: placeLabel(region),
 			newAvg,
 			previousAvg,
 			changePct,
 			qty: current.qty,
+			gold: current.gold,
 			trades: trades.length
 		});
 	}
@@ -149,14 +183,27 @@ async function postMovers(
 	const channel = await resolveChannel(client);
 	if (!channel) return false;
 
-	const fields = [
-		{
-			name: 'Feed',
-			value: `${formatQty(feed.shops.length)} shops · updated ${timeAgo(feed.generated)}`,
-			inline: true
-		}
-	];
+	const fields = movers.map((mover) => {
+		const tradeLabel = mover.trades === 1 ? 'trade' : 'trades';
+		const priceLine = shopPriceLine(feed, mover.item, mover.region);
+		const value = [
+			`${formatPct(mover.changePct)} · now ${formatPrice(mover.newAvg)}g · 7d avg ${formatPrice(mover.previousAvg)}g`,
+			`${formatQty(mover.qty)} sold in ${formatQty(mover.trades)} ${tradeLabel} · ${formatPrice(mover.gold)}g traded`
+		];
+		if (priceLine) value.push(priceLine);
+		return {
+			name: `${mover.name} — ${mover.place}`,
+			value: value.join('\n'),
+			inline: false
+		};
+	});
+
 	const dashboard = publicDashboardUrl('/market');
+	fields.push({
+		name: 'Feed',
+		value: `${formatQty(feed.shops.length)} shops · updated ${timeAgo(feed.generated)}`,
+		inline: true
+	});
 	if (dashboard) {
 		fields.push({
 			name: 'Dashboard',
@@ -167,21 +214,11 @@ async function postMovers(
 
 	const embed = new EmbedBuilder()
 		.setColor(COLORS.ask)
-		.setAuthor({ name: 'Market moves · live shop feed' })
+		.setAuthor({ name: 'Market moves · by island/area' })
 		.setTitle(`${movers.length} significant ${movers.length === 1 ? 'move' : 'moves'}`)
 		.setURL(WIKI_MARKET_PAGE)
 		.setDescription(
-			movers
-				.map((mover) => {
-					const tradeLabel = mover.trades === 1 ? 'trade' : 'trades';
-					return (
-						`**${mover.name}** · ${mover.place} · ${formatPct(mover.changePct)} to ` +
-						`**${formatPrice(mover.newAvg)}g** (7d avg ${formatPrice(mover.previousAvg)}g) · ` +
-						`${formatQty(mover.qty)} sold in ` +
-						`${formatQty(mover.trades)} ${tradeLabel}`
-					);
-				})
-				.join('\n')
+			'Compared with the previous 7-day average for the same item in the same region.'
 		)
 		.addFields(fields)
 		.setTimestamp(new Date());
@@ -223,58 +260,65 @@ async function postSummary(
 		groups.set(key, group);
 	}
 
+	const areaCount = groups.size;
 	const ranked = [...groups.values()]
 		.sort((a, b) => b.gold - a.gold || b.qty - a.qty)
-		.slice(0, 6);
+		.slice(0, 10);
 	const total = weighted(trades);
 	const itemCount = new Set(trades.map((trade) => trade.item)).size;
-	const lines = ranked.map((group) => {
+	const areaNote =
+		areaCount > ranked.length
+			? ` · top ${formatQty(ranked.length)} of ${formatQty(areaCount)} item/area groups`
+			: '';
+	const itemFields = ranked.map((group) => {
 		const average = group.gold / group.qty;
-		return (
-			`**${wikiItemLabel(group.item, feed.items)}** · ${placeLabel(group.region)} · ` +
-			`${formatQty(group.qty)} sold · avg ${formatPrice(average)}g · ` +
-			`${formatQty(group.trades)} ${group.trades === 1 ? 'trade' : 'trades'}`
-		);
+		const priceLine = shopPriceLine(feed, group.item, group.region);
+		const tradeLabel = group.trades === 1 ? 'trade' : 'trades';
+		const detail = `${formatQty(group.trades)} ${tradeLabel}`;
+		return {
+			name: `${wikiItemLabel(group.item, feed.items)} — ${placeLabel(group.region)}`,
+			value: [
+				`${formatQty(group.qty)} sold · avg ${formatPrice(average)}g · ${formatPrice(group.gold)}g traded`,
+				priceLine ? `${detail} · ${priceLine}` : detail
+			].join('\n'),
+			inline: false
+		};
 	});
 
 	const openShops = feed.shops.filter((shop) => shop.state === 'open').length;
 	const latest = trades[trades.length - 1];
 	const start = trades[0].ts;
 	const end = latest.ts;
+	itemFields.push({
+		name: 'Latest trade',
+		value:
+			`${wikiItemLabel(latest.item, feed.items)} — ${placeLabel(latest.region)}\n` +
+			`${formatQty(latest.qty)} for ${formatPrice(latest.gold)}g`,
+		inline: false
+	});
+	itemFields.push(
+		{
+			name: 'Shops open',
+			value: `${formatQty(openShops)} / ${formatQty(feed.shops.length)}`,
+			inline: true
+		},
+		{
+			name: 'Feed',
+			value: `Updated ${timeAgo(feed.generated)}`,
+			inline: true
+		}
+	);
+
 	const embed = new EmbedBuilder()
 		.setColor(COLORS.neutral)
 		.setAuthor({ name: 'Market pulse · live shop feed' })
 		.setTitle(`${formatQty(total.qty)} items sold · ${formatPrice(total.gold)}g traded`)
 		.setURL(WIKI_MARKET_PAGE)
 		.setDescription(
-			lines.length
-				? `${lines.join('\n')}\n\nLatest: **${wikiItemLabel(latest.item, feed.items)}** · ` +
-						`${placeLabel(latest.region)} · ${formatQty(latest.qty)} for ` +
-						`${formatPrice(latest.gold)}g`
-				: 'No shop trades in this window.'
+			`<t:${Math.floor(start / 1000)}:t>–<t:${Math.floor(end / 1000)}:t> · ` +
+				`${formatQty(trades.length)} trades across ${formatQty(itemCount)} items${areaNote}`
 		)
-		.addFields(
-			{
-				name: 'Period',
-				value: `<t:${Math.floor(start / 1000)}:t>–<t:${Math.floor(end / 1000)}:t>`,
-				inline: true
-			},
-			{
-				name: 'Activity',
-				value: `${formatQty(trades.length)} trades · ${formatQty(itemCount)} items`,
-				inline: true
-			},
-			{
-				name: 'Shops open',
-				value: `${formatQty(openShops)} / ${formatQty(feed.shops.length)}`,
-				inline: true
-			},
-			{
-				name: 'Feed',
-				value: `Updated ${timeAgo(feed.generated)}`,
-				inline: true
-			}
-		)
+		.addFields(itemFields)
 		.setTimestamp(new Date());
 
 	try {
