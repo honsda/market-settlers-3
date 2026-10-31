@@ -26,7 +26,9 @@ function notice(message: string): void {
 }
 
 async function newsChannelId(): Promise<string> {
-	return (await getMeta('bot:news_channel_id')) || botConfig.newsChannelId;
+	// An explicit env channel wins; the meta value is only the auto-discovered
+	// #news channel so it survives restarts without another lookup.
+	return botConfig.newsChannelId || (await getMeta('bot:news_channel_id')) || '';
 }
 
 async function resolveChannel(client: Client): Promise<TextChannel | null> {
