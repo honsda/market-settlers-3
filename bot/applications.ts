@@ -303,11 +303,11 @@ function applicationGuideEmbed(guild: Guild): EmbedBuilder {
 			},
 			{
 				name: 'What we ask',
-				value: '• Minecraft IGN\n• Age (13+)\n• Timezone and usual play times\n• Why you want to join\n• What you want to do or contribute'
+				value: '• Minecraft IGN\n• Age (18+)\n• Timezone and usual play times\n• Why you want to join\n• What you want to do or contribute'
 			},
 			{
 				name: 'Before you start',
-				value: 'You must be 13+ and have **Direct Messages** from server members enabled.'
+				value: 'You must be 18+ and have **Direct Messages** from server members enabled.'
 			}
 		)
 		.setFooter({ text: 'Settlers III · Applications' });
@@ -427,7 +427,7 @@ const QUESTIONS: Record<Step, (guildName: string) => string> = {
 	ign: () =>
 		`**Question 1 of ${QUESTION_COUNT}**\nWhat is your Minecraft in-game name (IGN)?\n\n_3–16 letters, numbers or underscores._`,
 	age: () =>
-		`**Question 2 of ${QUESTION_COUNT}**\nHow old are you?\n\n_You must be at least 13 to use Discord and apply._`,
+		`**Question 2 of ${QUESTION_COUNT}**\nHow old are you?\n\n_You must be at least 18 to use Discord and apply._`,
 	timezone: () =>
 		`**Question 3 of ${QUESTION_COUNT}**\nWhat is your timezone, and when are you usually online?\n\n_Example: GMT+1, weekday evenings and weekends._`,
 	reason: (guildName) =>
@@ -463,19 +463,19 @@ function checkAnswer(step: Step, content: string): AnswerCheck {
 
 	if (step === 'age') {
 		if (!/^\d{1,3}$/.test(content)) {
-			return { ok: false, error: 'Please reply with your age as a number between 13 and 120.' };
+			return { ok: false, error: 'Please reply with your age as a number between 18 and 120.' };
 		}
 		const age = Number(content);
-		if (age < 13) {
+		if (age < 18) {
 			return {
 				ok: false,
 				error:
-					'You must be at least 13 to use Discord and apply. This application has been cancelled.',
+					'You must be at least 18 to use Discord and apply. This application has been cancelled.',
 				cancel: true
 			};
 		}
 		if (age > 120) {
-			return { ok: false, error: 'Please enter a realistic age between 13 and 120.' };
+			return { ok: false, error: 'Please enter a realistic age between 18 and 120.' };
 		}
 		return { ok: true };
 	}
