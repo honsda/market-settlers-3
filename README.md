@@ -13,9 +13,9 @@ Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v
 - **Live shop prices** — the official wiki feed (`/data/market.json`) is shown on `/market` with best wanted/for-sale prices, last sale, 24h volume and movers.
 - **Live updates** — offers posted on the website or from Discord appear everywhere within a second via Server-Sent Events.
 - **Embedded live map** — the server Dynmap is framed in the app, with one-click deep links to offer coordinates and a live online-player list.
-- **News & dispatches** — a `/news` section with market announcements, trading guides and community notes, including individual article pages with an in-page contents rail.
+- **Newsroom & newspaper** — a standalone `/news` area with recent articles, a personal “Your articles” desk, a rich-text authoring page, moderator image review, and an endless dated newspaper feed at `/news/paper`.
 - **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme. It also posts a batched market pulse and significant shop-price moves from the official feed, with the island/area and region named.
-- **No accounts** — your IGN/guild profile lives in your browser; each offer you create gets a local edit token so only you can cancel it.
+- **No accounts** — your IGN/guild profile lives in your browser; each offer gets a local edit token and the newsroom gets a local author token, so only you can manage your own posts.
 - **Demo mode** — `npm run db:seed` fills the board with believable traders and two weeks of price history.
 - **Supabase-ready schema** — a complete Postgres schema with RLS, indexes, an alert queue and an atomic revision counter lives in `supabase/schema.sql`.
 
@@ -152,6 +152,7 @@ The image runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.
 | `APP_URL` | yes | Your Vercel URL, used in Discord links. |
 | `SUPABASE_URL` | yes | Shared database with the Vercel deployment. |
 | `SUPABASE_SECRET_KEY` | yes | Server-side key; never expose it to the browser. |
+| `NEWS_MODERATOR_KEY` | recommended | Staff key for `/news/moderation`; without it image review is disabled. |
 | `DISCORD_ALERT_CHANNEL_ID` | optional | Can also be set later with `/alerts`. |
 | `ALERT_*`, `WIKI_MARKET_*` | optional | Tuning values described in `.env.example`. |
 
@@ -191,6 +192,8 @@ The hosted Postgres schema lives in [`supabase/schema.sql`](supabase/schema.sql)
 - `price_history` — best bid/ask snapshots used for sparklines and alerts.
 - `alerts` — the bot's queued price signals and delivery state.
 - `meta` — the revision counter, bot heartbeat and alert-channel settings.
+- `news_articles` — drafts, review submissions and published dispatches.
+- `news_media` — uploaded images plus their approval state, stored as base64 in the row.
 - `bump_revision()` — an atomic revision bump used by the web app and bot.
 - `open_offers` — a convenience view for dashboards.
 
@@ -217,11 +220,51 @@ Both the web app and the Discord bot use the same backend and the same `meta.rev
 
 ---
 
-## News & dispatches
+## Newsroom & newspaper
 
-The public news section is at `/news`, with article pages at `/news/[slug]`. Dispatches are content, not database rows: edit `src/lib/news.ts` to add an article (`title`, `excerpt`, `category`, `author`, date, accent, icon, tags and a block-based body), and the listing, filters, related links, in-page contents and metadata update automatically.
+The newsroom is deliberately separate from the market dashboard. It has its own minimal layout, masthead and navigation:
 
-Categories currently supported: `Announcement`, `Market`, `Guide` and `Event`.
+| Route | Purpose |
+| --- | --- |
+| `/news` | Recent articles and the front page. |
+| `/news/paper` | Endless, dated newspaper feed; older pages load as you scroll. |
+| `/news/mine` | The articles created in this browser, with draft/review/published status. |
+| `/news/write` | Rich-text editor for new articles and drafts. |
+| `/news/moderation` | Staff queue for approving or rejecting images and publishing articles. |
+| `/news/[slug]` | A published article. |
+
+### Writing and identity
+
+There are no accounts. The browser generates a random **author token** and keeps it in `localStorage`; the server stores only its SHA-256 hash. That token is how “Your articles”, draft editing and image ownership work. Clearing site data loses access to those drafts, so keep the same browser/profile. The token is not shown in URLs.
+
+The editor uses **TipTap** for headings, bold/italic/underline, lists, quotes, links, code and images. Article HTML is sanitized server-side with `sanitize-html`; only images served from `/api/news/media/...` are allowed, so pasted external image URLs are stripped.
+
+### Image review
+
+Uploaded images are stored in `news_media` with `status = 'pending'`. They are unlisted but fetchable by their random ID so the author and staff can preview them. An article can be submitted for review with pending images, but it cannot be published until **every attached image and the cover** is approved. Uploads are capped at 4 MB (and larger browser images are compressed client-side) to stay under Vercel's serverless request-body limit. The moderator desk is a client-side page that asks for `NEWS_MODERATOR_KEY` and sends it as `x-news-moderator-key`; without that env var the endpoint returns `503`.
+
+To use it:
+
+1. Set `NEWS_MODERATOR_KEY` to a long random value in `.env` and in the hosting provider.
+2. Open `/news/moderation`, enter the key, approve images, then publish the article.
+3. Treat the key like a password. It is not the same as any Discord role; if you later add Discord OAuth, the key can be replaced with a role check.
+
+The original hand-written dispatches are preserved in `src/lib/news-legacy.ts` and appear as an archive on the first newspaper page until database articles replace them.
+
+Categories: `Announcement`, `Market`, `Guide` and `Event`.
+
+### Miraheze instead of the custom newsroom?
+
+Miraheze is a free MediaWiki farm, so it is good at community editing, page history, talk pages and wiki-style moderation. It is a poor drop-in backend for this newsroom if you want the custom writing experience, Discord-native identity and an approval queue:
+
+- **API** — you can create/read pages with the MediaWiki Action API (`/w/api.php`) and REST API, and upload files with `action=upload`. Reads are straightforward; writes need a bot password or OAuth, CSRF tokens and careful error handling.
+- **Rich text** — MediaWiki stores wikitext. VisualEditor/Parsoid can round-trip HTML, but it is not a general-purpose HTML editor. Templates, wiki markup and sanitization will leak into the authoring experience.
+- **Images** — uploads are generally live as soon as they are uploaded. A “pending until approved” workflow needs the Moderation extension, a draft namespace, page protection or a custom bot workflow. You would still build most of the queue and publish logic yourself.
+- **Identity and roles** — “Your articles” would mean Miraheze accounts and OAuth, not the local author token. Moderator rights live in wiki groups, which means a second account system beside Discord.
+- **Look and performance** — the custom site would render MediaWiki HTML or fetch page content and restyle it. You lose control of layout, article metadata, canonical URLs and latency; every article view becomes an API/cache problem.
+- **Licensing and reliability** — public wiki content is typically CC BY-SA, and Miraheze is volunteer-run with occasional outages and rate limits. Check the current terms before making it the canonical store for your news.
+
+**Recommendation:** keep the custom `news_articles` / `news_media` store as the canonical publishing system. If you want a community wiki, run Miraheze as a separate archive or companion wiki and use a small bot to copy approved articles there with attribution and a canonical link back to `/news/[slug]`. That gives you wiki history without turning wiki markup, OAuth and volunteer uptime into hard dependencies of the newspaper.
 
 ---
 
@@ -267,6 +310,7 @@ Categories currently supported: `Announcement`, `Market`, `Guide` and `Event`.
 | `SUPABASE_PUBLISHABLE_KEY` | — | Public key (`sb_publishable_...`); safe for the browser. |
 | `SUPABASE_SECRET_KEY` | — | Server-only secret key (`sb_secret_...`); bypasses RLS. Never expose it. |
 | `SUPABASE_ACCESS_TOKEN` | — | Personal access token used only by `npm run db:push-schema`. |
+| `NEWS_MODERATOR_KEY` | — | Staff key for `/news/moderation`; required to approve images. |
 
 `.env.local` takes precedence over `.env`. The web app, scripts and bot all load the same files (`src/lib/server/env.ts` uses `process.loadEnvFile`).
 
@@ -279,7 +323,8 @@ src/
   lib/
     market.ts              shared catalogue, types, map URL builder
     wiki-market.ts         official shop-feed types, regions and item mapping
-    news.ts                news article content, categories and helpers
+    news.ts                news types, categories, date/status and HTML helpers
+    news-legacy.ts         the original hand-written dispatches (archive fallback)
     format.ts              price/quantity/percent/time formatting
     client/                browser stores (profile, live SSE, toasts, composer)
     components/            Svelte UI (market table, offer form, cards, map frame…)
@@ -295,15 +340,21 @@ src/
       dashboard.ts         /api/market response assembly
       wiki-market.ts       official shop-feed fetch, normalization and snapshot
       alerts.ts            async alert queue facade for the bot
+      news.ts              async newsroom facade (SQLite or Supabase)
+      news-core.ts         validation, sanitization, hashing and row mapping
+      news-sqlite.ts       local article/media CRUD and moderation
+      news-supabase.ts     hosted article/media CRUD and moderation
+      news-legacy.ts       archive dispatches adapted to the database shape
+      news-http.ts         author-token / moderator-key helpers and JSON errors
       dynmap.ts            live Dynmap player proxy
       env.ts               environment loading + defaults
   routes/
     +page.svelte           dashboard
     market/               full market board
     map/                  embedded live map
-    news/                 dispatch listing and article pages
+    news/                 masthead, recent articles, newspaper, editor, your desk, moderation
     discord/              bot status, commands and alert feed
-    api/                  offers, market, history, alerts, server, guilds, stream
+    api/                  offers, market, history, alerts, server, guilds, stream, news
 bot/
   index.ts                 Discord client, heartbeat, interactions
   commands.ts              slash commands, autocomplete, cancel button
@@ -331,8 +382,10 @@ tsconfig.bot.json          container-safe TypeScript config for `bot:start`
 - `price_history` — best bid/ask snapshots per item, written whenever an offer changes the book.
 - `alerts` — significant-move queue with `posted_at` / `discord_message_id` for reliable delivery.
 - `meta` — revision counter (drives SSE), bot heartbeat, alert channel, application state and other small values.
+- `news_articles` — one row per dispatch with `status` (`draft`, `pending`, `published`, `rejected`), sanitized `body_html`, author token hash and publication timestamp.
+- `news_media` — one row per uploaded image with its base64 payload, MIME type, owning article and approval `status`.
 
-The browser keeps a local profile (`IGN`, guild, contact) and per-offer edit tokens in `localStorage`. There are no passwords or user accounts.
+The browser keeps a local profile (`IGN`, guild, contact), per-offer edit tokens and a news author token in `localStorage`. There are no passwords or user accounts.
 
 ---
 
@@ -350,6 +403,13 @@ The browser keeps a local profile (`IGN`, guild, contact) and per-offer edit tok
 | `/api/server` | `GET` | Live Dynmap player list (proxied). |
 | `/api/bot/status` | `GET` | Connection, channel and threshold status. |
 | `/api/stream` | `GET` | Server-Sent Events; emits when the database revision changes. |
+| `/api/news` | `GET`, `POST` | Public feed (`limit`, `cursor`, `full=1`) and article creation. Author mutations need `x-news-author-token`. |
+| `/api/news/mine` | `GET` | The author's drafts, pending articles and published pieces. |
+| `/api/news/[id]` | `GET`, `PATCH`, `DELETE` | Read/edit/delete a draft owned by the author token. |
+| `/api/news/[id]/submit` | `POST` | Send a draft to the moderator queue. |
+| `/api/news/media` | `POST` | Upload an image (`multipart/form-data`); starts as `pending`. |
+| `/api/news/media/[id]` | `GET` | Serve an image by its unlisted ID. |
+| `/api/news/moderation` | `GET`, `POST` | Review queue and approve/reject actions. Needs `x-news-moderator-key`. |
 
 Rate limiting is in-process (`src/lib/server/rate-limit.ts`) and keyed by IP.
 
@@ -365,7 +425,7 @@ npm run build
 APP_URL=https://market.example.com PORT=3000 node build/index.js
 ```
 
-Run the bot as a second process with `npm run bot:start`. With Supabase configured, both processes only need the same `SUPABASE_URL` and `SUPABASE_SECRET_KEY`; there is no shared volume to manage. The revision counter and alert queue live in Postgres, so multiple web instances and the bot stay in sync.
+Run the bot as a second process with `npm run bot:start`. With Supabase configured, both processes only need the same `SUPABASE_URL` and `SUPABASE_SECRET_KEY`; there is no shared volume to manage. The revision counter and alert queue live in Postgres, so multiple web instances and the bot stay in sync. Set `NEWS_MODERATOR_KEY` on the web host or the newsroom cannot approve images.
 
 For a SQLite-only deployment, set `MARKET_BACKEND=sqlite`, keep `MARKET_DB_PATH` on shared storage, and run the bot on the same host. SQLite is in WAL mode, so the two processes can read and write concurrently.
 

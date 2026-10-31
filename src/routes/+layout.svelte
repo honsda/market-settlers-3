@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import Sidebar from '../lib/components/Sidebar.svelte';
 	import MobileHeader from '../lib/components/MobileHeader.svelte';
 	import OfferForm from '../lib/components/OfferForm.svelte';
@@ -13,10 +14,19 @@
 
 	let { children } = $props();
 
+	const isNews = $derived(
+		page.url.pathname === '/news' || page.url.pathname.startsWith('/news/')
+	);
+
 	onMount(() => {
 		loadProfile();
-		startLive();
-		startServerPolling();
+	});
+
+	$effect(() => {
+		if (!isNews) {
+			startLive();
+			startServerPolling();
+		}
 	});
 </script>
 
@@ -24,30 +34,38 @@
 	<meta name="theme-color" content="#060a0f" />
 </svelte:head>
 
-<div class="min-h-screen lg:pl-[268px]">
-	<Sidebar />
-	<MobileHeader />
-
-	<main class="mx-auto w-full max-w-[1320px] px-4 py-5 sm:px-6 sm:py-7">
+{#if isNews}
+	<div class="min-h-screen">
 		{@render children()}
+	</div>
+{:else}
+	<div class="min-h-screen lg:pl-[268px]">
+		<Sidebar />
+		<MobileHeader />
 
-		<footer
-			class="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.055] pt-4 text-[10px] text-mist-600"
-		>
-			<p>
-				<span class="font-semibold text-mist-500">Settlers Market</span> · a community trading board for
-				Settlers III
-			</p>
-			<p class="flex items-center gap-2">
-				<span>Prices are player-set</span>
-				<span class="text-mist-700">·</span>
-				<span>Trade at your own risk</span>
-			</p>
-		</footer>
-	</main>
-</div>
+		<main class="mx-auto w-full max-w-[1320px] px-4 py-5 sm:px-6 sm:py-7">
+			{@render children()}
 
-<OfferForm />
-<ProfileModal />
+			<footer
+				class="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.055] pt-4 text-[10px] text-mist-600"
+			>
+				<p>
+					<span class="font-semibold text-mist-500">Settlers Market</span> · a community trading board for
+					Settlers III
+				</p>
+				<p class="flex items-center gap-2">
+					<span>Prices are player-set</span>
+					<span class="text-mist-700">·</span>
+					<span>Trade at your own risk</span>
+				</p>
+			</footer>
+		</main>
+	</div>
+{/if}
+
+{#if !isNews}
+	<OfferForm />
+	<ProfileModal />
+{/if}
 <ConfirmHost />
 <Toaster />

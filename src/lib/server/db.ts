@@ -111,6 +111,46 @@ function openDatabase(): DatabaseSync {
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		);
+
+		CREATE TABLE IF NOT EXISTS news_articles (
+			id TEXT PRIMARY KEY,
+			slug TEXT NOT NULL UNIQUE,
+			title TEXT NOT NULL,
+			excerpt TEXT NOT NULL,
+			category TEXT NOT NULL CHECK (category IN ('Announcement', 'Market', 'Guide', 'Event')),
+			author_name TEXT NOT NULL,
+			author_token_hash TEXT NOT NULL,
+			body_html TEXT NOT NULL,
+			cover_media_id TEXT,
+			status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'pending', 'published', 'rejected')),
+			reading_minutes INTEGER NOT NULL DEFAULT 1,
+			tags TEXT NOT NULL DEFAULT '[]',
+			moderator_note TEXT,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			published_at INTEGER
+		);
+		CREATE INDEX IF NOT EXISTS idx_news_published ON news_articles (status, published_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_news_author ON news_articles (author_token_hash, updated_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_news_status ON news_articles (status, updated_at DESC);
+
+		CREATE TABLE IF NOT EXISTS news_media (
+			id TEXT PRIMARY KEY,
+			article_id TEXT,
+			author_token_hash TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			mime TEXT NOT NULL,
+			width INTEGER,
+			height INTEGER,
+			data TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+			review_note TEXT,
+			created_at INTEGER NOT NULL,
+			reviewed_at INTEGER,
+			FOREIGN KEY (article_id) REFERENCES news_articles(id) ON DELETE SET NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_news_media_article ON news_media (article_id);
+		CREATE INDEX IF NOT EXISTS idx_news_media_status ON news_media (status, created_at);
 	`);
 	database
 		.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES ('revision', '1')`)

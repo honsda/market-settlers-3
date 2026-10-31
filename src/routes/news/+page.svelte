@@ -1,221 +1,110 @@
 <script lang="ts">
-	import Icon from '../../lib/components/Icon.svelte';
-	import {
-		NEWS,
-		categoryClass,
-		accentClass,
-		featuredArticle,
-		formatNewsDate,
-		otherArticles,
-		type NewsCategory
-	} from '../../lib/news';
+	import { categoryClass, formatNewsDate, type NewsArticle } from '../../lib/news';
 
-	const featured = featuredArticle();
-	const rest = otherArticles();
-	const categories: ('All' | NewsCategory)[] = ['All', 'Announcement', 'Market', 'Guide', 'Event'];
-	let category = $state<'All' | NewsCategory>('All');
-
-	const visible = $derived(
-		rest.filter((article) => category === 'All' || article.category === category)
-	);
-
-	function countFor(value: 'All' | NewsCategory): number {
-		return value === 'All' ? rest.length : rest.filter((article) => article.category === value).length;
-	}
+	let { data }: { data: { articles: NewsArticle[] } } = $props();
+	const articles = $derived(data.articles);
+	const featured = $derived(articles[0] ?? null);
+	const rest = $derived(articles.slice(1));
 </script>
 
 <svelte:head>
-	<title>News & dispatches · Settlers Market</title>
+	<title>Recent articles · The Caeldun Ledger</title>
 	<meta
 		name="description"
-		content="Market news, trading guides and community dispatches from Settlers III on Caeldun."
+		content="Recent dispatches, field notes and announcements from Settlers III on Caeldun."
 	/>
 </svelte:head>
 
-<div class="space-y-6">
-	<header class="flex flex-wrap items-end justify-between gap-4">
+<div class="space-y-10">
+	<header class="flex flex-wrap items-end justify-between gap-4 border-b border-white/[0.08] pb-6">
 		<div>
-			<p class="eyebrow flex items-center gap-2">
-				<Icon name="news" size={12} />
-				The Caeldun Ledger
-			</p>
-			<h1 class="mt-1.5 text-2xl font-bold tracking-tight text-mist-100 sm:text-[30px]">
-				News & dispatches
-			</h1>
-			<p class="mt-1 max-w-xl text-sm text-mist-400">
-				Market notes, practical trading guides and the occasional field report from around the
-				world.
+			<p class="text-[10px] font-semibold uppercase tracking-[0.22em] text-mist-500">The front page</p>
+			<h2 class="mt-2 font-serif text-3xl font-semibold tracking-tight text-mist-100 sm:text-4xl">
+				Recent articles
+			</h2>
+			<p class="mt-3 max-w-xl text-sm leading-relaxed text-mist-400">
+				Dispatches from the world of Caeldun — market notes, guides, events and the occasional
+				letter from the road.
 			</p>
 		</div>
-		<a href="/discord" class="btn-ghost">
-			<Icon name="discord" size={15} /> Market alerts
-		</a>
+		<div class="flex flex-wrap gap-2">
+			<a href="/news/paper" class="btn-ghost btn-sm">Read the newspaper</a>
+			<a href="/news/write" class="btn-primary btn-sm">Make an article</a>
+		</div>
 	</header>
 
-	<a
-		href="/news/{featured.slug}"
-		class="panel group relative grid overflow-hidden lg:grid-cols-[minmax(0,1fr)_340px]"
-	>
-		<div class="relative z-10 p-5 sm:p-7">
-			<div class="flex flex-wrap items-center gap-2">
-				<span class="chip {categoryClass(featured.category)}">{featured.category}</span>
-				<span class="text-[10px] font-medium text-mist-500">
-					{formatNewsDate(featured.publishedAt)}
-				</span>
-				<span class="text-mist-700">·</span>
-				<span class="num text-[10px] text-mist-500">{featured.readingMinutes} min read</span>
-			</div>
-
-			<h2
-				class="mt-4 max-w-xl text-2xl font-bold leading-tight tracking-tight text-mist-100 transition group-hover:text-white sm:text-[32px]"
-			>
-				{featured.title}
-			</h2>
-			<p class="mt-3 max-w-xl text-sm leading-relaxed text-mist-400">{featured.excerpt}</p>
-
-			<div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-				<div class="flex items-center gap-2.5">
-					<span
-						class="flex h-8 w-8 items-center justify-center rounded-full border border-bid/25 bg-bid/10 text-[11px] font-bold text-bid"
-					>
-						{featured.author.slice(0, 1)}
-					</span>
-					<div class="leading-tight">
-						<p class="text-[11px] font-semibold text-mist-200">{featured.author}</p>
-						<p class="text-[10px] text-mist-500">Featured dispatch</p>
-					</div>
-				</div>
-				<span class="flex items-center gap-1.5 text-xs font-semibold text-bid">
-					Read the dispatch
-					<Icon
-						name="arrowRight"
-						size={14}
-						class="transition group-hover:translate-x-0.5"
-					/>
-				</span>
-			</div>
-		</div>
-
-		<div
-			class="relative hidden min-h-[280px] items-center justify-center border-l border-white/[0.06] bg-gradient-to-br lg:flex {accentClass(
-				featured.accent
-			)}"
-		>
-			<div class="absolute inset-0 ledger-grid opacity-[0.35]"></div>
-			<div class="relative flex flex-col items-center gap-4 p-6 text-center">
-				<span class="flex h-20 w-20 items-center justify-center rounded-3xl border border-white/10 bg-ink-950/60 shadow-2xl backdrop-blur">
-					<Icon name={featured.icon} size={34} />
-				</span>
-				<div>
-					<p class="num text-[10px] font-semibold uppercase tracking-[0.22em] text-mist-500">
-						Issue 01
-					</p>
-					<p class="mt-1 text-sm font-semibold text-mist-200">The market is open</p>
-				</div>
-				<div class="flex flex-wrap justify-center gap-1.5">
-					{#each featured.tags as tag (tag)}
-						<span class="chip-neutral">{tag}</span>
-					{/each}
-				</div>
-			</div>
-		</div>
-	</a>
-
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="flex flex-wrap items-center gap-1.5">
-			{#each categories as value (value)}
-				<button
-					type="button"
-					class="chip transition {category === value
-						? 'border-bid/30 bg-bid/10 text-bid'
-						: 'border-white/10 bg-white/[0.03] text-mist-400 hover:border-white/20 hover:text-mist-200'}"
-					onclick={() => (category = value)}
-				>
-					{value}
-					<span class="num ml-0.5 text-[9px] opacity-60">{countFor(value)}</span>
-				</button>
-			{/each}
-		</div>
-		<p class="num text-[10px] text-mist-600">{visible.length} of {rest.length} dispatches</p>
-	</div>
-
-	{#if visible.length}
-		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-			{#each visible as article (article.slug)}
-				<a
-					href="/news/{article.slug}"
-					class="panel group flex flex-col overflow-hidden transition hover:border-white/15 hover:bg-white/[0.025]"
-				>
-					<div class="relative h-28 overflow-hidden border-b border-white/[0.06] bg-gradient-to-br {accentClass(
-						article.accent
-					)}">
-						<div class="absolute inset-0 ledger-grid opacity-30"></div>
-						<div class="absolute left-4 top-4 flex flex-wrap items-center gap-1.5">
-							<span class="chip {categoryClass(article.category)}">{article.category}</span>
-						</div>
-						<div class="absolute bottom-3 right-4 opacity-80">
-							<Icon name={article.icon} size={34} />
-						</div>
-					</div>
-
-					<div class="flex flex-1 flex-col p-4">
-						<h2
-							class="text-base font-semibold leading-snug tracking-tight text-mist-100 transition group-hover:text-white"
-						>
-							{article.title}
-						</h2>
-						<p class="mt-2 line-clamp-3 flex-1 text-[11px] leading-relaxed text-mist-400">
-							{article.excerpt}
-						</p>
-
-						<div
-							class="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.05] pt-3 text-[10px] text-mist-500"
-						>
-							<span class="truncate">{article.author}</span>
-							<span class="num shrink-0">{formatNewsDate(article.publishedAt)}</span>
-						</div>
-					</div>
-				</a>
-			{/each}
-		</div>
-	{:else}
-		<div class="panel flex flex-col items-center gap-2 px-5 py-14 text-center">
-			<Icon name="news" size={22} class="text-mist-600" />
-			<p class="text-xs font-semibold text-mist-300">No dispatches in this category yet</p>
-			<button type="button" class="btn-ghost mt-2" onclick={() => (category = 'All')}>
-				Show everything
-			</button>
-		</div>
-	{/if}
-
-	<section
-		class="panel flex flex-col items-start justify-between gap-4 overflow-hidden p-5 sm:flex-row sm:items-center sm:p-6"
-	>
-		<div class="flex items-start gap-3">
-			<span
-				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/10 text-violet-300"
-			>
-				<Icon name="discord" size={18} />
-			</span>
+	{#if featured}
+		<article class="grid items-start gap-6 border-b border-white/[0.08] pb-10 md:grid-cols-[1.15fr_0.85fr]">
 			<div>
-				<h2 class="text-sm font-semibold text-mist-100">Get the next dispatch in Discord</h2>
-				<p class="mt-1 max-w-lg text-[11px] leading-relaxed text-mist-400">
-					Price alerts, new features and market notes land in the alert channel. The bot posts
-					when the book actually moves — not every time someone blinks.
+				<div class="flex flex-wrap items-center gap-2 text-[10px] text-mist-500">
+					<span class="chip {categoryClass(featured.category)}">{featured.category}</span>
+					<span>{formatNewsDate(featured.publishedAt)}</span>
+					<span>·</span>
+					<span class="num">{featured.readingMinutes} min read</span>
+				</div>
+				<h3 class="mt-4 font-serif text-3xl font-semibold leading-[1.12] tracking-tight text-mist-100 sm:text-[40px]">
+					<a href="/news/{featured.slug}" class="transition hover:text-white">{featured.title}</a>
+				</h3>
+				<p class="mt-4 max-w-2xl text-sm leading-relaxed text-mist-400">{featured.excerpt}</p>
+				<p class="mt-5 text-[11px] text-mist-500">
+					By <span class="text-mist-300">{featured.author}</span>
 				</p>
 			</div>
-		</div>
-		<a href="/discord" class="btn-primary shrink-0">
-			<Icon name="bell" size={15} /> Set up alerts
-		</a>
-	</section>
-</div>
+			{#if featured.coverUrl}
+				<a href="/news/{featured.slug}" class="block overflow-hidden rounded-sm border border-white/10">
+					<img
+						src={featured.coverUrl}
+						alt=""
+						class="aspect-[4/3] w-full object-cover transition duration-500 hover:scale-[1.02]"
+						loading="eager"
+					/>
+				</a>
+			{:else}
+				<div class="hidden border-l border-white/[0.08] pl-6 md:block">
+					<p class="font-serif text-lg leading-relaxed text-mist-500">
+						“The market is open, the roads are long, and the ledger keeps the rest.”
+					</p>
+					<p class="mt-4 text-[10px] uppercase tracking-[0.18em] text-mist-600">Caeldun Ledger</p>
+				</div>
+			{/if}
+		</article>
+	{/if}
 
-<style>
-	.ledger-grid {
-		background-image:
-			linear-gradient(to right, rgba(255, 255, 255, 0.09) 1px, transparent 1px),
-			linear-gradient(to bottom, rgba(255, 255, 255, 0.09) 1px, transparent 1px);
-		background-size: 22px 22px;
-	}
-</style>
+	{#if rest.length}
+		<section class="space-y-0">
+			<div class="flex items-center justify-between border-b border-white/[0.08] pb-3">
+				<h3 class="text-[10px] font-semibold uppercase tracking-[0.22em] text-mist-500">More dispatches</h3>
+				<a href="/news/paper" class="text-[10px] font-medium text-mist-500 transition hover:text-bid">
+					See the endless edition
+				</a>
+			</div>
+			{#each rest as article (article.id)}
+				<article class="grid gap-4 border-b border-white/[0.07] py-6 sm:grid-cols-[132px_minmax(0,1fr)]">
+					<div class="text-[10px] leading-relaxed text-mist-500">
+						<p class="num text-mist-400">{formatNewsDate(article.publishedAt)}</p>
+						<p class="mt-1">{article.readingMinutes} min read</p>
+					</div>
+					<div>
+						<div class="flex flex-wrap items-center gap-2">
+							<span class="chip {categoryClass(article.category)}">{article.category}</span>
+							<span class="text-[10px] text-mist-500">By {article.author}</span>
+						</div>
+						<h4 class="mt-2 font-serif text-xl font-semibold leading-snug text-mist-100">
+							<a href="/news/{article.slug}" class="transition hover:text-white">{article.title}</a>
+						</h4>
+						<p class="mt-2 max-w-2xl text-[13px] leading-relaxed text-mist-400">{article.excerpt}</p>
+					</div>
+				</article>
+			{/each}
+		</section>
+	{:else if !featured}
+		<div class="border-y border-white/[0.08] py-16 text-center">
+			<p class="font-serif text-2xl text-mist-200">The first edition is waiting.</p>
+			<p class="mx-auto mt-2 max-w-md text-sm text-mist-500">
+				There are no published articles yet. Write one and a moderator will review the images before
+				it goes to press.
+			</p>
+			<a href="/news/write" class="btn-primary mt-5">Make an article</a>
+		</div>
+	{/if}
+</div>

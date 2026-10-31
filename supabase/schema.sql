@@ -77,6 +77,52 @@ insert into public.meta (key, value)
 values ('revision', '1')
 on conflict (key) do nothing;
 
+-- ── Newsroom ────────────────────────────────────────────────────────────────
+-- Articles are written by anonymous authors who hold a local author token
+-- (stored as a SHA-256 hash). Images are held in news_media until a moderator
+-- approves them; an article cannot be published while any attached image is
+-- still pending.
+create table if not exists public.news_articles (
+	id text primary key,
+	slug text not null unique,
+	title text not null,
+	excerpt text not null,
+	category text not null check (category in ('Announcement', 'Market', 'Guide', 'Event')),
+	author_name text not null,
+	author_token_hash text not null,
+	body_html text not null,
+	cover_media_id text,
+	status text not null default 'draft' check (status in ('draft', 'pending', 'published', 'rejected')),
+	reading_minutes integer not null default 1,
+	tags text not null default '[]',
+	moderator_note text,
+	created_at bigint not null,
+	updated_at bigint not null,
+	published_at bigint
+);
+
+create index if not exists idx_news_published on public.news_articles (status, published_at desc);
+create index if not exists idx_news_author on public.news_articles (author_token_hash, updated_at desc);
+create index if not exists idx_news_status on public.news_articles (status, updated_at desc);
+
+create table if not exists public.news_media (
+	id text primary key,
+	article_id text references public.news_articles(id) on delete set null,
+	author_token_hash text not null,
+	filename text not null,
+	mime text not null,
+	width integer,
+	height integer,
+	data text not null,
+	status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+	review_note text,
+	created_at bigint not null,
+	reviewed_at bigint
+);
+
+create index if not exists idx_news_media_article on public.news_media (article_id);
+create index if not exists idx_news_media_status on public.news_media (status, created_at);
+
 -- Atomic revision bump used by the web app and the bot. The SSE endpoint polls
 -- this counter; writes from either process become visible to the dashboard.
 create or replace function public.bump_revision()
@@ -113,16 +159,22 @@ alter table public.offers enable row level security;
 alter table public.price_history enable row level security;
 alter table public.alerts enable row level security;
 alter table public.meta enable row level security;
+alter table public.news_articles enable row level security;
+alter table public.news_media enable row level security;
 
 revoke all on public.offers from anon, authenticated;
 revoke all on public.price_history from anon, authenticated;
 revoke all on public.alerts from anon, authenticated;
 revoke all on public.meta from anon, authenticated;
+revoke all on public.news_articles from anon, authenticated;
+revoke all on public.news_media from anon, authenticated;
 
 grant select, insert, update, delete on public.offers to service_role;
 grant select, insert, update, delete on public.price_history to service_role;
 grant select, insert, update, delete on public.alerts to service_role;
 grant select, insert, update, delete on public.meta to service_role;
+grant select, insert, update, delete on public.news_articles to service_role;
+grant select, insert, update, delete on public.news_media to service_role;
 grant usage, select on sequence public.price_history_id_seq to service_role;
 
 -- ── Convenience view for the dashboard (optional) ───────────────────────────

@@ -53,5 +53,6 @@ export const serverEnv = {
 	),
 	supabaseUrl: (process.env.SUPABASE_URL?.trim() || '').replace(/\/+$/, ''),
 	supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
-	supabaseSecretKey: process.env.SUPABASE_SECRET_KEY?.trim() ?? ''
+	supabaseSecretKey: process.env.SUPABASE_SECRET_KEY?.trim() ?? '',
+	newsModeratorKey: process.env.NEWS_MODERATOR_KEY?.trim() ?? ''
 };
