@@ -177,7 +177,7 @@ export const commandData = [
 
 	new SlashCommandBuilder()
 		.setName('initrule')
-		.setDescription('Post or refresh the server rules embed.')
+		.setDescription('Post or refresh the general community rules embed.')
 		.setContexts(InteractionContextType.Guild)
 		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 		.addChannelOption((option) =>

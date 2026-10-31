@@ -56,7 +56,7 @@
 		{
 			name: '/initrule',
 			args: 'channel',
-			description: 'Post or refresh the server rules embed. Needs Manage Server.'
+			description: 'Post or refresh the general community rules embed. Needs Manage Server.'
 		},
 		{
 			name: '/rolecitizen',

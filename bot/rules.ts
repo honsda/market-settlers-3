@@ -11,7 +11,7 @@ import { getMeta, setMeta } from '../src/lib/server/db';
 import { COLORS } from './format';
 
 /**
- * `/initrule` — post or refresh the general server rules.
+ * `/initrule` — post or refresh the general community rules.
  *
  * The guide is stored per guild *and* per channel, so staff can keep a rules
  * embed in more than one place without the copies fighting over one message id.
@@ -33,7 +33,7 @@ const RULES: Array<{ name: string; value: string }> = [
 	{
 		name: '3 · No spam or advertising',
 		value:
-			'No flooding, mass mentions, unsolicited DMs, or advertising outside the market channels. Ask staff before posting any other advert or invite.'
+			'No flooding, mass mentions, unsolicited DMs, or advertising without staff approval. No self-promotion outside the places staff have set aside for it.'
 	},
 	{
 		name: '4 · Stay on topic',
@@ -41,29 +41,24 @@ const RULES: Array<{ name: string; value: string }> = [
 			'Use each channel for its intended purpose. Take long side conversations to DMs or a more suitable channel.'
 	},
 	{
-		name: '5 · Play fair',
+		name: '5 · No impersonation',
 		value:
-			'No cheating, exploits, duping, griefing, or real-world trading. Follow the in-game rules as well as these.'
+			'Do not pretend to be staff, another member, or the server itself. Do not use staff names or roles to mislead people.'
 	},
 	{
-		name: '6 · No impersonation',
-		value:
-			'Do not pretend to be staff, another member, or the server itself. Staff roles and names are not yours to use.'
-	},
-	{
-		name: '7 · Listen to staff',
+		name: '6 · Listen to staff',
 		value:
 			'Staff decisions are final. If you disagree, DM staff or open a ticket instead of arguing in public chat. Report problems privately rather than backseat-moderating.'
 	},
 	{
-		name: '8 · One account',
+		name: '7 · One account',
 		value:
 			'Do not use alt accounts to evade punishments, farm activity, or mislead other members.'
 	},
 	{
-		name: '9 · Follow Discord',
+		name: '8 · Follow Discord',
 		value:
-			'You must be at least 18 to join this server. You must also follow Discord’s Terms of Service and Community Guidelines. These rules apply alongside Discord’s own.'
+			'You must be at least 18 to join this community. You must also follow Discord’s Terms of Service and Community Guidelines. These rules apply alongside Discord’s own.'
 	},
 	{
 		name: 'Consequences',
@@ -87,12 +82,12 @@ function rulesEmbed(guild: Guild): EmbedBuilder {
 	return new EmbedBuilder()
 		.setColor(COLORS.ask)
 		.setAuthor({ name: `${guild.name} · Community` })
-		.setTitle('Server rules')
+		.setTitle('Community rules')
 		.setDescription(
 			`These rules apply everywhere in **${guild.name}** — text channels, voice rooms, and DMs with members. This is an **18+ community**; by staying here, you agree to follow these rules.\n\n**Use common sense.** Not every situation is listed, and staff have the final say.`
 		)
 		.addFields(...RULES)
-		.setFooter({ text: 'Settlers III · Rules' });
+		.setFooter({ text: 'Settlers III · Community rules' });
 }
 
 /** `/initrule` — post or refresh the rules embed in a text channel. */
@@ -105,7 +100,7 @@ export async function postRulesEmbed(interaction: ChatInputCommandInteraction): 
 
 	if (!hasStaffPermission(interaction.memberPermissions)) {
 		await interaction.reply(
-			ephemeral('You need the **Manage Server** permission to post the server rules.')
+			ephemeral('You need the **Manage Server** permission to post the community rules.')
 		);
 		return;
 	}
@@ -145,6 +140,6 @@ export async function postRulesEmbed(interaction: ChatInputCommandInteraction): 
 	await message.pin().catch(() => undefined);
 
 	await interaction.editReply({
-		content: `Server rules ${action} in <#${target.id}>.`
+		content: `Community rules ${action} in <#${target.id}>.`
 	});
 }

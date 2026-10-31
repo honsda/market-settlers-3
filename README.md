@@ -76,7 +76,7 @@ npm run dev:all
 | `/alerts channel:<#channel>` | Point market alerts at a channel. Requires **Manage Server**. |
 | `/apply` | Starts a membership application. Only works in a channel named **#apply**; the five questions are asked in DMs. |
 | `/initapply` | Posts or refreshes the application guide embed in **#apply** and pins it. Requires **Manage Server**. |
-| `/initrule [channel]` | Posts or refreshes a pinned server rules embed. Defaults to the current text channel. Requires **Manage Server**. |
+| `/initrule [channel]` | Posts or refreshes a pinned general community rules embed. Defaults to the current text channel. Requires **Manage Server**. |
 | `/rolecitizen [role] [member]` | Choose the role approved applicants receive (creates **Citizen** when omitted) and optionally give it to someone now. Requires **Manage Server**. |
 
 Item options use Discord autocomplete backed by the shared catalogue in `src/lib/market.ts`.
@@ -91,11 +91,11 @@ Item options use Discord autocomplete backed by the shared catalogue in `src/lib
 
 Application answers, submitted forms and decisions live in the shared `meta` table (`apply:*` keys), so a restart does not lose an in-flight review.
 
-### Server rules
+### Community rules
 
 Run `/initrule` in a text channel — or pass `channel:<#channel>` — to post or refresh a pinned rules embed. Running it again edits the same message instead of posting duplicates. The command is staff-only and does not create a channel, so make a **#rules** channel first if you want one.
 
-Rules are stored per channel under `rules:message:*` in the shared `meta` table, so each rules channel keeps its own message id.
+Rules are general Discord community rules (not in-game rules) and are stored per channel under `rules:message:*` in the shared `meta` table, so each rules channel keeps its own message id.
 
 ### How alerts work
 
@@ -308,7 +308,7 @@ bot/
   index.ts                 Discord client, heartbeat, interactions
   commands.ts              slash commands, autocomplete, cancel button
   applications.ts          /apply DM flow, /initapply guide, #apply cleanup, review
-  rules.ts                 /initrule server rules embed
+  rules.ts                 /initrule general community rules embed
   watcher.ts               queued alert delivery
   wiki-market.ts           shop-feed pulse and market-move posts
   register.ts              REST command registration
