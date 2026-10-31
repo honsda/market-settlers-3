@@ -3,8 +3,9 @@ import { getMeta, setMeta } from '../src/lib/server/db';
 import { serverEnv } from '../src/lib/server/env';
 import {
 	fetchWikiMarketFeed,
-	findProfitableItems,
-	type WikiProfitItem
+	findMarketSpreads,
+	type WikiPriceDeal,
+	type WikiSpreadItem
 } from '../src/lib/server/wiki-market';
 import {
 	WIKI_MARKET_PAGE,
@@ -56,6 +57,16 @@ function placeLabel(region: number): string {
 	const land = wikiRegionLand(region);
 	const name = wikiRegionName(region);
 	return land ? `${land} / ${name}` : name;
+}
+
+function signedGold(value: number): string {
+	return `${value > 0 ? '+' : ''}${formatPrice(value)}g`;
+}
+
+function dealText(deal: WikiPriceDeal): string {
+	const price = `**${formatPrice(deal.price)}g**${deal.source === 'shop' ? '' : ' (est.)'}`;
+	if (deal.source !== 'shop' || deal.region === null) return `${price} at **${deal.shop}**`;
+	return `${price} at **${deal.shop}** — ${placeLabel(deal.region)}`;
 }
 
 function bestShopPrice(
@@ -339,71 +350,82 @@ async function postSummary(
 	}
 }
 
-async function postProfit(
+async function postSpreadBoard(
 	client: Client,
 	feed: WikiFeed,
-	items: WikiProfitItem[]
+	items: WikiSpreadItem[]
 ): Promise<boolean> {
 	if (!items.length) return false;
 	const channel = await resolveChannel(client);
 	if (!channel) return false;
 
-	const fields = items.map((item, index) => ({
-		name: `${index + 1}. ${item.name}`,
-		value: [
-			`Buy **${formatPrice(item.buy.price)}g** at **${item.buy.shop}** — ${placeLabel(item.buy.region)}`,
-			`Sell **${formatPrice(item.sell.price)}g** at **${item.sell.shop}** — ${placeLabel(item.sell.region)}`,
-			`**+${formatPrice(item.profitPerItem)}g / item** · **+${formatPrice(item.profitPerStack)}g / ${WIKI_STACK_SIZE}-stack** · ${formatPct(item.marginPct)}`
-		].join('\n'),
-		inline: false
-	}));
+	const fields = items.map((item, index) => {
+		const result =
+			item.profitPerItem > 0 ? 'Profit' : item.profitPerItem < 0 ? 'Loss' : 'Flat';
+		const market = [
+			`Market **${formatPrice(item.marketAvg)}g avg**`,
+			`last **${formatPrice(item.lastPrice)}g**`,
+			`${formatQty(item.sold24h)} sold / ${formatQty(item.trades24h)} trades`
+		].join(' · ');
+		return {
+			name: `${index + 1}. ${item.name}`,
+			value: [
+				`Buy ${dealText(item.buy)} · Sell ${dealText(item.sell)}`,
+				market,
+				`**${result} ${signedGold(item.profitPerItem)}/item** · **${signedGold(item.profitPerStack)}/stack** · ${formatPct(item.marginPct)}`
+			].join('\n'),
+			inline: false
+		};
+	});
 
 	const fewer =
 		items.length < 10
-			? ` Only ${items.length} ${items.length === 1 ? 'item has' : 'items have'} a positive open-shop spread right now.`
+			? ` Only ${items.length} ${items.length === 1 ? 'item has' : 'items have'} enough shop or market data right now.`
 			: '';
 	const embed = new EmbedBuilder()
-		.setColor(COLORS.bid)
-		.setAuthor({ name: 'Market profit board · hourly' })
+		.setColor(COLORS.ask)
+		.setAuthor({ name: 'Market spread board · hourly' })
 		.setTitle(
 			items.length >= 10
-				? 'Top 10 most profitable items'
-				: `${items.length} profitable shop ${items.length === 1 ? 'flip' : 'flips'}`
+				? 'Top 10 profit & loss spreads'
+				: `${items.length} profit & loss ${items.length === 1 ? 'spread' : 'spreads'}`
 		)
 		.setURL(WIKI_MARKET_PAGE)
 		.setDescription(
-			`Buy from the cheapest open shop and sell to the highest open buyer. ` +
-				`Stack profit assumes ${WIKI_STACK_SIZE} items. Feed updated ${timeAgo(feed.generated)}.${fewer}`
+			`Largest per-stack gaps in the best open-shop prices, ranked by absolute spread. ` +
+				`Shop-to-shop is used when both sides are open; a missing side uses the 24h average (or last trade). ` +
+				`Positive = buy-low/sell-high; negative = the shop is worse than the market. ` +
+				`Stack size ${WIKI_STACK_SIZE}. Feed updated ${timeAgo(feed.generated)}.${fewer}`
 		)
 		.addFields(fields)
 		.setTimestamp(new Date());
 
 	try {
 		await channel.send({ embeds: [footer(embed)] });
-		console.log(`[bot] Posted ${items.length} profitable shop flips to #${channel.name}.`);
+		console.log(`[bot] Posted ${items.length} market spreads to #${channel.name}.`);
 		return true;
 	} catch (error) {
 		console.error(
-			`[bot] Could not post the profit board to #${channel.name}:`,
+			`[bot] Could not post the market spread board to #${channel.name}:`,
 			error instanceof Error ? error.message : error
 		);
 		return false;
 	}
 }
 
-async function maybePostProfit(client: Client, feed: WikiFeed): Promise<void> {
+async function maybePostSpreadBoard(client: Client, feed: WikiFeed): Promise<void> {
 	const lastRaw = await getMeta('wiki:last_profit_at');
 	const last = Number(lastRaw ?? 0) || 0;
 	const interval = serverEnv.wikiMarketProfitMinutes * 60_000;
 	if (last && Date.now() - last < interval) return;
 
-	const items = findProfitableItems(feed, 10);
+	const items = findMarketSpreads(feed, 10);
 	if (!items.length) {
 		// No qualifying spread this hour; check again on the next interval.
 		await setMeta('wiki:last_profit_at', Date.now());
 		return;
 	}
-	if (await postProfit(client, feed, items)) {
+	if (await postSpreadBoard(client, feed, items)) {
 		await setMeta('wiki:last_profit_at', Date.now());
 	}
 }
@@ -427,14 +449,14 @@ async function tick(client: Client): Promise<void> {
 			console.log(
 				`[bot] Market feed ready: ${feed.shops.length} shops, ${feed.trades.length} trades; starting from ${new Date(maxTs).toISOString()}.`
 			);
-			await maybePostProfit(client, feed);
+			await maybePostSpreadBoard(client, feed);
 			return;
 		}
 
 		const newTrades = feed.trades.filter((trade) => trade.ts > lastTs);
 		await setMeta('wiki:last_feed_generated', feed.generated);
 		await setMeta('wiki:last_poll_at', Date.now());
-		await maybePostProfit(client, feed);
+		await maybePostSpreadBoard(client, feed);
 
 		if (!newTrades.length) return;
 
@@ -466,7 +488,7 @@ export function startWikiMarketWatcher(client: Client): void {
 	stopped = false;
 	console.log(
 		`[bot] Market feed watcher started (poll ${serverEnv.wikiMarketPollSeconds}s, ` +
-			`pulse ${serverEnv.wikiMarketSummaryMinutes}m, profit ${serverEnv.wikiMarketProfitMinutes}m, ` +
+			`pulse ${serverEnv.wikiMarketSummaryMinutes}m, spreads ${serverEnv.wikiMarketProfitMinutes}m, ` +
 			`moves >${serverEnv.wikiMarketAlertThresholdPct}%).`
 	);
 	timer = setTimeout(() => void tick(client), 3_000);

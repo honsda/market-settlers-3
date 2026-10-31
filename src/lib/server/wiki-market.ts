@@ -157,28 +157,33 @@ function bestShop(
 	return best;
 }
 
-export interface WikiShopDeal {
+export interface WikiPriceDeal {
 	price: number;
 	shop: string;
-	region: number;
+	region: number | null;
+	source: 'shop' | 'avg' | 'last';
 }
 
-export interface WikiProfitItem {
+export interface WikiSpreadItem {
 	key: string;
 	name: string;
-	buy: WikiShopDeal;
-	sell: WikiShopDeal;
+	buy: WikiPriceDeal;
+	sell: WikiPriceDeal;
 	profitPerItem: number;
 	profitPerStack: number;
 	marginPct: number;
+	marketAvg: number | null;
+	lastPrice: number | null;
+	sold24h: number;
+	trades24h: number;
 }
 
 function bestOpenShopDeal(
 	feed: WikiFeed,
 	item: string,
 	side: 'buy' | 'sell'
-): WikiShopDeal | null {
-	let best: WikiShopDeal | null = null;
+): WikiPriceDeal | null {
+	let best: WikiPriceDeal | null = null;
 	for (const shop of feed.shops) {
 		if (shop.item !== item || shop.side !== side || shop.state !== 'open') continue;
 		// A selling shop cannot sell from an empty shelf. Buying shops report
@@ -187,27 +192,60 @@ function bestOpenShopDeal(
 		const price = bestOffer(shop);
 		if (price === null) continue;
 		if (!best || (side === 'sell' ? price < best.price : price > best.price)) {
-			best = { price, shop: shop.name, region: shop.region };
+			best = { price, shop: shop.name, region: shop.region, source: 'shop' };
 		}
 	}
 	return best;
 }
 
-/**
- * The best open-shop flip for each item: buy from the cheapest selling shop,
- * sell to the highest buying shop. Stack profit uses the wiki's 64-item stack.
- */
-export function findProfitableItems(feed: WikiFeed, limit = 10): WikiProfitItem[] {
-	const size = Math.min(Math.max(Math.trunc(limit), 1), 10);
-	const keys = new Set(
-		feed.shops.filter((shop) => shop.state === 'open').map((shop) => shop.item)
+function marketDeal(price: number, source: 'avg' | 'last'): WikiPriceDeal {
+	return {
+		price,
+		shop: source === 'avg' ? '24h market avg' : 'last trade',
+		region: null,
+		source
+	};
+}
+
+function spreadSort(a: WikiSpreadItem, b: WikiSpreadItem): number {
+	return (
+		Math.abs(b.profitPerStack) - Math.abs(a.profitPerStack) ||
+		b.trades24h - a.trades24h ||
+		a.name.localeCompare(b.name)
 	);
-	const items: WikiProfitItem[] = [];
+}
+
+function buildSpreadCandidates(feed: WikiFeed): WikiSpreadItem[] {
+	const reference = feed.generated || Date.now();
+	const cutoff = reference - DAY;
+	const tradesByItem = new Map<string, WikiTrade[]>();
+	for (const trade of feed.trades) {
+		const trades = tradesByItem.get(trade.item) ?? [];
+		trades.push(trade);
+		tradesByItem.set(trade.item, trades);
+	}
+
+	const keys = new Set([
+		...Object.keys(feed.items),
+		...feed.shops.map((shop) => shop.item),
+		...tradesByItem.keys()
+	]);
+	const items: WikiSpreadItem[] = [];
 
 	for (const key of keys) {
-		const buy = bestOpenShopDeal(feed, key, 'sell');
-		const sell = bestOpenShopDeal(feed, key, 'buy');
-		if (!buy || !sell || buy.price <= 0 || sell.price <= buy.price) continue;
+		const trades = tradesByItem.get(key) ?? [];
+		const recent = trades.filter((trade) => trade.ts >= cutoff);
+		const avg24h = weightedAverage(recent);
+		const lastPrice = trades.length ? trades[trades.length - 1].price : null;
+		const shopBuy = bestOpenShopDeal(feed, key, 'sell');
+		const shopSell = bestOpenShopDeal(feed, key, 'buy');
+		if (!shopBuy && !shopSell) continue;
+		const marketPrice = avg24h ?? lastPrice;
+		const marketSource = avg24h !== null ? 'avg' : 'last';
+		const buy = shopBuy ?? (marketPrice !== null ? marketDeal(marketPrice, marketSource) : null);
+		const sell = shopSell ?? (marketPrice !== null ? marketDeal(marketPrice, marketSource) : null);
+		if (!buy || !sell || buy.price <= 0) continue;
+
 		const profitPerItem = sell.price - buy.price;
 		items.push({
 			key,
@@ -216,18 +254,47 @@ export function findProfitableItems(feed: WikiFeed, limit = 10): WikiProfitItem[
 			sell,
 			profitPerItem,
 			profitPerStack: profitPerItem * WIKI_STACK_SIZE,
-			marginPct: (profitPerItem / buy.price) * 100
+			marginPct: (profitPerItem / buy.price) * 100,
+			marketAvg: avg24h,
+			lastPrice,
+			sold24h: recent.reduce((sum, trade) => sum + trade.qty, 0),
+			trades24h: recent.length
 		});
 	}
 
-	return items
-		.sort(
-			(a, b) =>
-				b.profitPerStack - a.profitPerStack ||
-				b.marginPct - a.marginPct ||
-				a.name.localeCompare(b.name)
-		)
+	return items;
+}
+
+/**
+ * The ten largest per-stack gaps between an open shop and the 24h market.
+ * Items with both shop sides use the shop-to-shop spread; a missing side falls
+ * back to the 24h weighted average (or the last trade). Items traded in the
+ * last day come first; non-zero spreads are preferred over flat ones, and
+ * stale rows only fill leftover slots.
+ */
+export function findMarketSpreads(feed: WikiFeed, limit = 10): WikiSpreadItem[] {
+	const size = Math.min(Math.max(Math.trunc(limit), 1), 10);
+	const candidates = buildSpreadCandidates(feed);
+	const recent = candidates.filter((item) => item.trades24h >= 1);
+	const picked = recent
+		.filter((item) => item.profitPerItem !== 0)
+		.sort(spreadSort)
 		.slice(0, size);
+	if (picked.length < size) {
+		const flat = recent
+			.filter((item) => item.profitPerItem === 0)
+			.sort(spreadSort)
+			.slice(0, size - picked.length);
+		picked.push(...flat);
+	}
+	if (picked.length < size) {
+		const stale = candidates
+			.filter((item) => item.trades24h === 0 && item.profitPerItem !== 0)
+			.sort(spreadSort)
+			.slice(0, size - picked.length);
+		picked.push(...stale);
+	}
+	return picked.sort(spreadSort);
 }
 
 function weightedAverage(trades: WikiTrade[]): number | null {
