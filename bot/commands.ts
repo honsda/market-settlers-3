@@ -39,6 +39,7 @@ import {
 	postApplicationGuide,
 	startApplication
 } from './applications';
+import { postRulesEmbed } from './rules';
 
 export const commandData = [
 	new SlashCommandBuilder()
@@ -173,6 +174,18 @@ export const commandData = [
 		.setDescription('Post or refresh the application instructions in #apply.')
 		.setContexts(InteractionContextType.Guild)
 		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+	new SlashCommandBuilder()
+		.setName('initrule')
+		.setDescription('Post or refresh the server rules embed.')
+		.setContexts(InteractionContextType.Guild)
+		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+		.addChannelOption((option) =>
+			option
+				.setName('channel')
+				.setDescription('Where to post the rules (default: this channel)')
+				.addChannelTypes(ChannelType.GuildText)
+		),
 
 	new SlashCommandBuilder()
 		.setName('rolecitizen')
@@ -531,6 +544,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
 		case 'initapply': {
 			await postApplicationGuide(interaction);
+			return;
+		}
+
+		case 'initrule': {
+			await postRulesEmbed(interaction);
 			return;
 		}
 

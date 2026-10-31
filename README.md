@@ -59,7 +59,7 @@ npm run dev:all
    DISCORD_ALERT_CHANNEL_ID=...      # market channel; can also be set with /alerts
    ```
 
-3. Invite the bot with the `bot` and `applications.commands` scopes. Grant **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Messages**, **Manage Roles** and **Manage Channels**. Manage Messages keeps `#apply` clean and lets the guide be pinned; the last two let it create the Dweller role and the admin-only `#staff-verify` channel; `/alerts`, `/initapply` and `/rolecitizen` additionally check for **Manage Server** on the person running them.
+3. Invite the bot with the `bot` and `applications.commands` scopes. Grant **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Messages**, **Manage Roles** and **Manage Channels**. Manage Messages keeps `#apply` clean and lets the guides be pinned; the last two let it create the Dweller role and the admin-only `#staff-verify` channel; `/alerts`, `/initapply`, `/initrule` and `/rolecitizen` additionally check for **Manage Server** on the person running them.
 4. Under **Bot → Privileged Gateway Intents**, enable **Server Members** (needed for join roles and member lookups). Message Content is not needed — DMs sent to the bot are exempt, and the `#apply` cleanup never reads message text.
 5. Run `npm run bot:deploy` once (or just `npm run bot` — it registers commands on startup).
 6. Start it with `npm run bot` or `npm run dev:all`.
@@ -76,6 +76,7 @@ npm run dev:all
 | `/alerts channel:<#channel>` | Point market alerts at a channel. Requires **Manage Server**. |
 | `/apply` | Starts a membership application. Only works in a channel named **#apply**; the five questions are asked in DMs. |
 | `/initapply` | Posts or refreshes the application guide embed in **#apply** and pins it. Requires **Manage Server**. |
+| `/initrule [channel]` | Posts or refreshes a pinned server rules embed. Defaults to the current text channel. Requires **Manage Server**. |
 | `/rolecitizen [role] [member]` | Choose the role approved applicants receive (creates **Citizen** when omitted) and optionally give it to someone now. Requires **Manage Server**. |
 
 Item options use Discord autocomplete backed by the shared catalogue in `src/lib/market.ts`.
@@ -83,12 +84,18 @@ Item options use Discord autocomplete backed by the shared catalogue in `src/lib
 ### Applications and roles
 
 1. A staff member runs `/initapply` in **#apply** to post (or refresh) the guide embed. The bot pins it and deletes other messages posted in the channel, so the guide stays easy to find. `/apply` is refused outside **#apply**, and each member can have only one pending form per server.
-2. The bot sends five questions in DMs: **IGN** (3–16 letters, numbers or underscores), **age** (13+; younger applicants are stopped), **timezone and usual play times**, **why they want to join**, and **what they want to do or contribute**. Typing `cancel` stops the flow; unfinished conversations expire after an hour.
+2. The bot sends five questions in DMs: **IGN** (3–16 letters, numbers or underscores), **age** (18+; younger applicants are stopped), **timezone and usual play times**, **why they want to join**, and **what they want to do or contribute**. Typing `cancel` stops the flow; unfinished conversations expire after an hour.
 3. The finished form is posted to **#staff-verify** with **Approve** and **Deny** buttons. If that channel does not exist the bot creates it with `@everyone` denied **View Channel** — Discord administrators bypass channel overwrites, so it is admin-only. Anyone with **Manage Server** can review.
 4. **Approve** gives the configured citizen role (created on demand as **Citizen**) and DMs the applicant; **Deny** DMs them without changing roles. `/rolecitizen role:<@role>` changes the role, and `/rolecitizen member:<@user>` grants it manually.
 5. Every new member automatically receives **Dweller**, created with the light blue-grey colour `#9FB4C7`. Dweller stays as the base role after approval.
 
 Application answers, submitted forms and decisions live in the shared `meta` table (`apply:*` keys), so a restart does not lose an in-flight review.
+
+### Server rules
+
+Run `/initrule` in a text channel — or pass `channel:<#channel>` — to post or refresh a pinned rules embed. Running it again edits the same message instead of posting duplicates. The command is staff-only and does not create a channel, so make a **#rules** channel first if you want one.
+
+Rules are stored per channel under `rules:message:*` in the shared `meta` table, so each rules channel keeps its own message id.
 
 ### How alerts work
 
@@ -301,6 +308,7 @@ bot/
   index.ts                 Discord client, heartbeat, interactions
   commands.ts              slash commands, autocomplete, cancel button
   applications.ts          /apply DM flow, /initapply guide, #apply cleanup, review
+  rules.ts                 /initrule server rules embed
   watcher.ts               queued alert delivery
   wiki-market.ts           shop-feed pulse and market-move posts
   register.ts              REST command registration

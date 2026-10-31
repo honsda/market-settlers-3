@@ -54,6 +54,11 @@
 			description: 'Post or refresh the application guide in #apply. Needs Manage Server.'
 		},
 		{
+			name: '/initrule',
+			args: 'channel',
+			description: 'Post or refresh the server rules embed. Needs Manage Server.'
+		},
+		{
 			name: '/rolecitizen',
 			args: 'role, member',
 			description: 'Pick the role given after an application is approved. Needs Manage Server.'
