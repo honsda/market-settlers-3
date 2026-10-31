@@ -11,6 +11,9 @@ import { getItem, type Item } from './market';
 export const WIKI_MARKET_PAGE = 'https://wiki.settlers-mc.org/market.html';
 export const WIKI_MARKET_FEED = 'https://wiki.settlers-mc.org/data/market.json';
 
+/** The wiki prices bundles in per-item, per-8 and per-64-stack terms. */
+export const WIKI_STACK_SIZE = 64;
+
 export const WIKI_REGIONS: Record<number, { name: string; land: string }> = {
 	1: { name: 'Fearnmuir', land: 'Outer Isles' },
 	2: { name: 'Dunbarra', land: 'Outer Isles' },

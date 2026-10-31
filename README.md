@@ -14,7 +14,7 @@ Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v
 - **Live updates** — offers posted on the website or from Discord appear everywhere within a second via Server-Sent Events.
 - **Embedded live map** — the server Dynmap is framed in the app, with one-click deep links to offer coordinates and a live online-player list.
 - **Newsroom & newspaper** — a standalone `/news` area with recent articles, a personal “Your articles” desk, a rich-text authoring page, moderator image review, an endless dated newspaper feed at `/news/paper`, and automatic Discord announcements when a dispatch is published.
-- **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme. It also posts a batched market pulse and significant shop-price moves from the official feed, with the island/area and region named.
+- **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme. It also posts a batched market pulse, an hourly top-10 shop-flip profit board, and significant shop-price moves from the official feed, with the island/area and region named.
 - **No accounts** — your IGN/guild profile lives in your browser; each offer gets a local edit token and the newsroom gets a local author token, so only you can manage your own posts.
 - **Demo mode** — `npm run db:seed` fills the board with believable traders and two weeks of price history.
 - **Supabase-ready schema** — a complete Postgres schema with RLS, indexes, an alert queue and an atomic revision counter lives in `supabase/schema.sql`.
@@ -183,12 +183,15 @@ The server writes that file about every 60 seconds. All prices in it are **gold 
 The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) and:
 
 - posts a batched **market pulse** to the configured market channel every `WIKI_MARKET_SUMMARY_MINUTES` (default **30m**) when new trades have happened;
+- posts an hourly **profit board** with up to ten items where an open shop is selling below the best open buying shop, showing the margin per item and per 64-stack (`WIKI_MARKET_PROFIT_MINUTES`, default **60m**);
 - posts an immediate **market move** alert when a new trade's average is at least `WIKI_MARKET_ALERT_THRESHOLD_PCT` (default **12%**) away from that item's previous 7-day average **in the same region**;
 - labels every pulse and move with the island/area and region (for example `Rainlands / Morvethan`);
 - uses one Discord field per item + area, with volume, average, gold traded and current best shop prices, so updates stay readable without losing detail;
 - suppresses repeat move alerts for the same item + region for `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` (default **60m**).
 
-The cursor is stored in `meta` (`wiki:last_trade_ts`, `wiki:last_summary_at`, `wiki:last_feed_generated`), so restarting the bot does not replay old trades. On first start it begins from the newest trade in the feed.
+The profit board only ranks positive spreads between an **open selling shop** and an **open buying shop**; sold-out and out-of-gold shops are excluded. If fewer than ten items qualify, it posts the available flips rather than padding the list with unprofitable ones. Its hourly cursor is `wiki:last_profit_at`.
+
+The cursor is stored in `meta` (`wiki:last_trade_ts`, `wiki:last_summary_at`, `wiki:last_profit_at`, `wiki:last_feed_generated`), so restarting the bot does not replay old trades. On first start it begins from the newest trade in the feed.
 
 The official feed contains shop names, items, regions and prices — no player names. It is separate from the player-to-player order book in `offers`; the dashboard shows both.
 

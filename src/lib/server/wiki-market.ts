@@ -5,7 +5,7 @@ import type {
 	WikiShop,
 	WikiTrade
 } from '../wiki-market';
-import { wikiItemId, wikiItemLabel } from '../wiki-market';
+import { WIKI_STACK_SIZE, wikiItemId, wikiItemLabel } from '../wiki-market';
 import { serverEnv } from './env';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -155,6 +155,79 @@ function bestShop(
 		}
 	}
 	return best;
+}
+
+export interface WikiShopDeal {
+	price: number;
+	shop: string;
+	region: number;
+}
+
+export interface WikiProfitItem {
+	key: string;
+	name: string;
+	buy: WikiShopDeal;
+	sell: WikiShopDeal;
+	profitPerItem: number;
+	profitPerStack: number;
+	marginPct: number;
+}
+
+function bestOpenShopDeal(
+	feed: WikiFeed,
+	item: string,
+	side: 'buy' | 'sell'
+): WikiShopDeal | null {
+	let best: WikiShopDeal | null = null;
+	for (const shop of feed.shops) {
+		if (shop.item !== item || shop.side !== side || shop.state !== 'open') continue;
+		// A selling shop cannot sell from an empty shelf. Buying shops report
+		// their held stock instead of gold, so `open` is the relevant signal.
+		if (side === 'sell' && shop.stock <= 0) continue;
+		const price = bestOffer(shop);
+		if (price === null) continue;
+		if (!best || (side === 'sell' ? price < best.price : price > best.price)) {
+			best = { price, shop: shop.name, region: shop.region };
+		}
+	}
+	return best;
+}
+
+/**
+ * The best open-shop flip for each item: buy from the cheapest selling shop,
+ * sell to the highest buying shop. Stack profit uses the wiki's 64-item stack.
+ */
+export function findProfitableItems(feed: WikiFeed, limit = 10): WikiProfitItem[] {
+	const size = Math.min(Math.max(Math.trunc(limit), 1), 10);
+	const keys = new Set(
+		feed.shops.filter((shop) => shop.state === 'open').map((shop) => shop.item)
+	);
+	const items: WikiProfitItem[] = [];
+
+	for (const key of keys) {
+		const buy = bestOpenShopDeal(feed, key, 'sell');
+		const sell = bestOpenShopDeal(feed, key, 'buy');
+		if (!buy || !sell || buy.price <= 0 || sell.price <= buy.price) continue;
+		const profitPerItem = sell.price - buy.price;
+		items.push({
+			key,
+			name: wikiItemLabel(key, feed.items),
+			buy,
+			sell,
+			profitPerItem,
+			profitPerStack: profitPerItem * WIKI_STACK_SIZE,
+			marginPct: (profitPerItem / buy.price) * 100
+		});
+	}
+
+	return items
+		.sort(
+			(a, b) =>
+				b.profitPerStack - a.profitPerStack ||
+				b.marginPct - a.marginPct ||
+				a.name.localeCompare(b.name)
+		)
+		.slice(0, size);
 }
 
 function weightedAverage(trades: WikiTrade[]): number | null {

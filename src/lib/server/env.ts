@@ -45,6 +45,7 @@ export const serverEnv = {
 		process.env.WIKI_MARKET_URL?.trim() || 'https://wiki.settlers-mc.org/data/market.json',
 	wikiMarketPollSeconds: Math.max(30, num(process.env.WIKI_MARKET_POLL_SECONDS, 60)),
 	wikiMarketSummaryMinutes: Math.max(5, num(process.env.WIKI_MARKET_SUMMARY_MINUTES, 30)),
+	wikiMarketProfitMinutes: Math.max(15, num(process.env.WIKI_MARKET_PROFIT_MINUTES, 60)),
 	wikiMarketAlertThresholdPct: Math.max(
 		1,
 		num(process.env.WIKI_MARKET_ALERT_THRESHOLD_PCT, 12)
