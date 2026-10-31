@@ -41,29 +41,9 @@ const RULES: Array<{ name: string; value: string }> = [
 			'Use each channel for its intended purpose. Take long side conversations to DMs or a more suitable channel.'
 	},
 	{
-		name: '5 · No impersonation',
-		value:
-			'Do not pretend to be staff, another member, or the server itself. Do not use staff names or roles to mislead people.'
-	},
-	{
-		name: '6 · Listen to staff',
-		value:
-			'Staff decisions are final. If you disagree, DM staff or open a ticket instead of arguing in public chat. Report problems privately rather than backseat-moderating.'
-	},
-	{
-		name: '7 · One account',
-		value:
-			'Do not use alt accounts to evade punishments, farm activity, or mislead other members.'
-	},
-	{
-		name: '8 · Follow Discord',
+		name: '5 · Follow Discord',
 		value:
 			'You must be at least 18 to join this community. You must also follow Discord’s Terms of Service and Community Guidelines. These rules apply alongside Discord’s own.'
-	},
-	{
-		name: 'Consequences',
-		value:
-			'Breaking a rule can lead to a warning, mute, kick, or ban. Severe violations may be actioned immediately. Staff may update these rules at any time.'
 	}
 ];
 
