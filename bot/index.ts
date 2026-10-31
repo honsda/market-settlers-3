@@ -13,6 +13,7 @@ import { handleAutocomplete, handleButton, handleCommand } from './commands';
 import { addDwellerRole, handleApplicationDm, handleApplyChannelMessage, syncGuild } from './applications';
 import { registerCommands } from './register';
 import { startAlertWatcher, stopAlertWatcher } from './watcher';
+import { startNewsWatcher, stopNewsWatcher } from './news';
 import { startWikiMarketWatcher, stopWikiMarketWatcher } from './wiki-market';
 import { getMeta, setMeta } from '../src/lib/server/db';
 import { serverEnv } from '../src/lib/server/env';
@@ -69,6 +70,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 	startHeartbeat();
 	startAlertWatcher(client);
+	startNewsWatcher(client);
 	startWikiMarketWatcher(client);
 
 	// Make sure the application role and review channel exist. With a pinned
@@ -170,6 +172,7 @@ async function shutdown(signal: string): Promise<void> {
 	console.log(`\n[bot] ${signal} received, shutting down…`);
 
 	stopAlertWatcher();
+	stopNewsWatcher();
 	stopWikiMarketWatcher();
 	if (heartbeat) clearInterval(heartbeat);
 	try {

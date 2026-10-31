@@ -36,9 +36,11 @@ export const serverEnv = {
 	discordClientId: process.env.DISCORD_CLIENT_ID?.trim() ?? '',
 	discordGuildId: process.env.DISCORD_GUILD_ID?.trim() ?? '',
 	discordAlertChannelId: process.env.DISCORD_ALERT_CHANNEL_ID?.trim() ?? '',
+	discordNewsChannelId: process.env.DISCORD_NEWS_CHANNEL_ID?.trim() ?? '',
 	alertThresholdPct: Math.max(0.5, num(process.env.ALERT_THRESHOLD_PCT, 8)),
 	alertCooldownMinutes: Math.max(1, num(process.env.ALERT_COOLDOWN_MINUTES, 45)),
 	alertPollSeconds: Math.max(5, num(process.env.ALERT_POLL_SECONDS, 20)),
+	newsPollSeconds: Math.max(5, num(process.env.NEWS_POLL_SECONDS, 20)),
 	wikiMarketUrl:
 		process.env.WIKI_MARKET_URL?.trim() || 'https://wiki.settlers-mc.org/data/market.json',
 	wikiMarketPollSeconds: Math.max(30, num(process.env.WIKI_MARKET_POLL_SECONDS, 60)),

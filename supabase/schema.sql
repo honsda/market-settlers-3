@@ -81,7 +81,8 @@ on conflict (key) do nothing;
 -- Articles are written by anonymous authors who hold a local author token
 -- (stored as a SHA-256 hash). Images are held in news_media until a moderator
 -- approves them; an article cannot be published while any attached image is
--- still pending.
+-- still pending. announced_at is set by the bot after it posts the article to
+-- Discord, so restarts do not duplicate announcements.
 create table if not exists public.news_articles (
 	id text primary key,
 	slug text not null unique,
@@ -98,12 +99,17 @@ create table if not exists public.news_articles (
 	moderator_note text,
 	created_at bigint not null,
 	updated_at bigint not null,
-	published_at bigint
+	published_at bigint,
+	announced_at bigint
 );
+
+-- Existing projects need the Discord announcement cursor added in place.
+alter table public.news_articles add column if not exists announced_at bigint;
 
 create index if not exists idx_news_published on public.news_articles (status, published_at desc);
 create index if not exists idx_news_author on public.news_articles (author_token_hash, updated_at desc);
 create index if not exists idx_news_status on public.news_articles (status, updated_at desc);
+create index if not exists idx_news_announced on public.news_articles (status, announced_at, published_at);
 
 create table if not exists public.news_media (
 	id text primary key,

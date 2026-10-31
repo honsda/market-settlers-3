@@ -128,7 +128,8 @@ function openDatabase(): DatabaseSync {
 			moderator_note TEXT,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
-			published_at INTEGER
+			published_at INTEGER,
+			announced_at INTEGER
 		);
 		CREATE INDEX IF NOT EXISTS idx_news_published ON news_articles (status, published_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_news_author ON news_articles (author_token_hash, updated_at DESC);
@@ -152,6 +153,20 @@ function openDatabase(): DatabaseSync {
 		CREATE INDEX IF NOT EXISTS idx_news_media_article ON news_media (article_id);
 		CREATE INDEX IF NOT EXISTS idx_news_media_status ON news_media (status, created_at);
 	`);
+
+	// Existing local databases predate the Discord announcement cursor. Add it
+	// in place so a bot restart does not require deleting the market database.
+	const newsColumns = database.prepare('PRAGMA table_info(news_articles)').all() as {
+		name: string;
+	}[];
+	if (!newsColumns.some((column) => column.name === 'announced_at')) {
+		database.exec('ALTER TABLE news_articles ADD COLUMN announced_at INTEGER;');
+	}
+	database.exec(
+		`CREATE INDEX IF NOT EXISTS idx_news_announced
+		 ON news_articles (status, announced_at, published_at);`
+	);
+
 	database
 		.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES ('revision', '1')`)
 		.run();

@@ -30,6 +30,7 @@ export interface NewsArticleRow {
 	created_at: number;
 	updated_at: number;
 	published_at: number | null;
+	announced_at: number | null;
 }
 
 export interface NewsMediaRow {

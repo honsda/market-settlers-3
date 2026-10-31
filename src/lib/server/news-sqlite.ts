@@ -109,6 +109,31 @@ export function listPublishedNewsSqlite(
 	};
 }
 
+export function listUnannouncedNewsSqlite(limit = 10): NewsArticle[] {
+	const size = Math.min(Math.max(Math.trunc(limit), 1), 25);
+	const rows = db
+		.prepare(
+			`SELECT * FROM news_articles
+			 WHERE status = 'published' AND published_at IS NOT NULL AND announced_at IS NULL
+			 ORDER BY published_at ASC, id ASC LIMIT ?`
+		)
+		.all(size) as unknown as NewsArticleRow[];
+	// The Discord embed only needs the summary and cover, not the full body.
+	return rows.map((row) => toNewsArticle(row, [], false));
+}
+
+export function markNewsAnnouncedSqlite(id: string, announcedAt = Date.now()): void {
+	db.prepare('UPDATE news_articles SET announced_at = ? WHERE id = ?').run(announcedAt, id);
+}
+
+export function markExistingNewsAnnouncedSqlite(before: number): void {
+	db.prepare(
+		`UPDATE news_articles SET announced_at = published_at
+		 WHERE status = 'published' AND published_at IS NOT NULL
+		   AND published_at <= ? AND announced_at IS NULL`
+	).run(before);
+}
+
 export function getPublishedNewsSqlite(slug: string): NewsArticle | undefined {
 	const row = getArticleRowBySlug(slug);
 	return row ? toNewsArticle(row, mediaForArticle(row.id)) : undefined;

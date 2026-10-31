@@ -1,5 +1,6 @@
 import { EmbedBuilder } from 'discord.js';
 import type { Alert, Item, Offer } from '../src/lib/market';
+import type { NewsArticle, NewsCategory } from '../src/lib/news';
 import { SITE, itemTexture, mapUrl } from '../src/lib/market';
 import { formatPct, formatPrice, formatQty, timeAgo } from '../src/lib/format';
 import { serverEnv } from '../src/lib/server/env';
@@ -59,6 +60,33 @@ export function alertEmbed(alert: Alert, item: Item | undefined): EmbedBuilder {
 		.setTimestamp(new Date(alert.createdAt));
 
 	return footer(embed);
+}
+
+const NEWS_COLORS: Record<NewsCategory, number> = {
+	Announcement: COLORS.bid,
+	Market: COLORS.ask,
+	Guide: 0x38bdf8,
+	Event: 0xa78bfa
+};
+
+export function newsEmbed(article: NewsArticle): EmbedBuilder {
+	const url = dashboardUrl(`/news/${article.slug}`);
+	const embed = new EmbedBuilder()
+		.setColor(NEWS_COLORS[article.category])
+		.setAuthor({ name: 'The Caeldun Ledger' })
+		.setTitle(article.title)
+		.setURL(url)
+		.setDescription(article.excerpt)
+		.addFields(
+			{ name: 'Section', value: article.category, inline: true },
+			{ name: 'Written by', value: article.author, inline: true },
+			{ name: 'Reading time', value: `${article.readingMinutes} min`, inline: true }
+		)
+		.setTimestamp(article.publishedAt ? new Date(article.publishedAt) : new Date())
+		.setFooter({ text: `${SITE.server} · ${SITE.world} · The Caeldun Ledger` });
+
+	if (article.coverUrl) embed.setImage(dashboardUrl(article.coverUrl));
+	return embed;
 }
 
 export function offerEmbed(offer: Offer, item: Item | undefined): EmbedBuilder {

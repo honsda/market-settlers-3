@@ -13,7 +13,7 @@ Built with **SvelteKit 3**, **Svelte 5 runes**, **TypeScript**, **Tailwind CSS v
 - **Live shop prices** — the official wiki feed (`/data/market.json`) is shown on `/market` with best wanted/for-sale prices, last sale, 24h volume and movers.
 - **Live updates** — offers posted on the website or from Discord appear everywhere within a second via Server-Sent Events.
 - **Embedded live map** — the server Dynmap is framed in the app, with one-click deep links to offer coordinates and a live online-player list.
-- **Newsroom & newspaper** — a standalone `/news` area with recent articles, a personal “Your articles” desk, a rich-text authoring page, moderator image review, and an endless dated newspaper feed at `/news/paper`.
+- **Newsroom & newspaper** — a standalone `/news` area with recent articles, a personal “Your articles” desk, a rich-text authoring page, moderator image review, an endless dated newspaper feed at `/news/paper`, and automatic Discord announcements when a dispatch is published.
 - **Discord bot** — `/price`, `/market`, `/offers`, `/player`, `/post` and `/alerts` slash commands, plus automatic alerts when a best bid or ask moves past a threshold or prints a new 7-day extreme. It also posts a batched market pulse and significant shop-price moves from the official feed, with the island/area and region named.
 - **No accounts** — your IGN/guild profile lives in your browser; each offer gets a local edit token and the newsroom gets a local author token, so only you can manage your own posts.
 - **Demo mode** — `npm run db:seed` fills the board with believable traders and two weeks of price history.
@@ -57,6 +57,7 @@ npm run dev:all
    DISCORD_CLIENT_ID=...
    DISCORD_GUILD_ID=...              # optional, makes commands appear instantly
    DISCORD_ALERT_CHANNEL_ID=...      # market channel; can also be set with /alerts
+   DISCORD_NEWS_CHANNEL_ID=...       # optional; otherwise the bot finds #news by name
    ```
 
 3. Invite the bot with the `bot` and `applications.commands` scopes. Grant **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Messages**, **Manage Roles** and **Manage Channels**. Manage Messages keeps `#apply` clean and lets the guides be pinned; the last two let it create the Dweller role and the admin-only `#staff-verify` channel; `/alerts`, `/initapply`, `/initrule` and `/rolecitizen` additionally check for **Manage Server** on the person running them.
@@ -102,6 +103,14 @@ Rules are general Discord community rules (not in-game rules) and are stored per
 Every offer mutation snapshots the item's best bid/ask into `price_history`. When a price moves more than `ALERT_THRESHOLD_PCT` (default **8%**), or sets a new 7-day high/low, a row is written to the `alerts` table. The bot polls that queue every `ALERT_POLL_SECONDS` (default 20s) and posts an embed to the configured channel. Alerts are marked as posted only after Discord accepts them, so nothing is lost if the bot is briefly offline.
 
 Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default 45) to keep the feed readable.
+
+### News announcements
+
+When a moderator publishes an article, the bot posts an embed in **#news** with the title, summary, section, author, reading time, cover image and a link to the full dispatch. The public URL comes from `APP_URL`.
+
+The bot checks `news_articles` every `NEWS_POLL_SECONDS` (default **20s**) for published rows that have not been announced yet. It sets `announced_at` only after Discord accepts the message, so an outage does not lose articles. On the feature's first start, articles already published before that moment are marked as announced; anything published afterwards is posted.
+
+Set `DISCORD_NEWS_CHANNEL_ID` to point at a specific channel. If it is empty, the bot looks for a channel named **#news** in `DISCORD_GUILD_ID` (or in any server it has joined). The resolved ID is remembered in `meta` under `bot:news_channel_id`.
 
 ### Deploy the bot
 
@@ -154,7 +163,8 @@ The image runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.
 | `SUPABASE_SECRET_KEY` | yes | Server-side key; never expose it to the browser. |
 | `NEWS_MODERATOR_KEY` | recommended | Staff key for `/news/moderation`; without it image review is disabled. |
 | `DISCORD_ALERT_CHANNEL_ID` | optional | Can also be set later with `/alerts`. |
-| `ALERT_*`, `WIKI_MARKET_*` | optional | Tuning values described in `.env.example`. |
+| `DISCORD_NEWS_CHANNEL_ID` | optional | Defaults to the bot's **#news** channel lookup. |
+| `ALERT_*`, `NEWS_POLL_SECONDS`, `WIKI_MARKET_*` | optional | Tuning values described in `.env.example`. |
 
 Do **not** set `MARKET_BACKEND=sqlite` on either host — the panel/container filesystem is ephemeral and the web app on Vercel cannot share it. With Supabase configured the bot is stateless and restarts safely.
 

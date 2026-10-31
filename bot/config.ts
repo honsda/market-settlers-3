@@ -5,8 +5,10 @@ export const botConfig = {
 	clientId: serverEnv.discordClientId,
 	guildId: serverEnv.discordGuildId,
 	alertChannelId: serverEnv.discordAlertChannelId,
+	newsChannelId: serverEnv.discordNewsChannelId,
 	thresholdPct: serverEnv.alertThresholdPct,
 	pollSeconds: serverEnv.alertPollSeconds,
+	newsPollSeconds: serverEnv.newsPollSeconds,
 	appUrl: serverEnv.appUrl
 };
 

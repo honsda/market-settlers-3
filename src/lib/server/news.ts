@@ -37,6 +37,24 @@ export async function listPublishedNews(
 	return { ...page, articles };
 }
 
+export async function listUnannouncedNews(limit = 10): Promise<NewsArticle[]> {
+	return usingSupabase
+		? supabaseBackend.listUnannouncedNewsSupabase(limit)
+		: sqlite.listUnannouncedNewsSqlite(limit);
+}
+
+export async function markNewsAnnounced(id: string): Promise<void> {
+	return usingSupabase
+		? supabaseBackend.markNewsAnnouncedSupabase(id)
+		: sqlite.markNewsAnnouncedSqlite(id);
+}
+
+export async function markExistingNewsAnnounced(before: number): Promise<void> {
+	return usingSupabase
+		? supabaseBackend.markExistingNewsAnnouncedSupabase(before)
+		: sqlite.markExistingNewsAnnouncedSqlite(before);
+}
+
 export async function getPublishedNews(slug: string): Promise<NewsArticle | undefined> {
 	const article = usingSupabase
 		? await supabaseBackend.getPublishedNewsSupabase(slug)

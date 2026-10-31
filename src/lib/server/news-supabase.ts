@@ -150,6 +150,42 @@ export async function listPublishedNewsSupabase(
 	};
 }
 
+export async function listUnannouncedNewsSupabase(limit = 10): Promise<NewsArticle[]> {
+	const size = Math.min(Math.max(Math.trunc(limit), 1), 25);
+	const { data, error } = await supabase()
+		.from('news_articles')
+		.select('*')
+		.eq('status', 'published')
+		.not('published_at', 'is', null)
+		.is('announced_at', null)
+		.order('published_at', { ascending: true })
+		.order('id', { ascending: true })
+		.limit(size);
+	assertOk(error, 'list unannounced news');
+	return ((data ?? []) as NewsArticleRow[]).map((row) => toNewsArticle(row, [], false));
+}
+
+export async function markNewsAnnouncedSupabase(
+	id: string,
+	announcedAt = Date.now()
+): Promise<void> {
+	const { error } = await supabase()
+		.from('news_articles')
+		.update({ announced_at: announcedAt })
+		.eq('id', id);
+	assertOk(error, 'mark news announced');
+}
+
+export async function markExistingNewsAnnouncedSupabase(before: number): Promise<void> {
+	const { error } = await supabase()
+		.from('news_articles')
+		.update({ announced_at: before })
+		.eq('status', 'published')
+		.lte('published_at', before)
+		.is('announced_at', null);
+	assertOk(error, 'mark existing news announced');
+}
+
 export async function getPublishedNewsSupabase(slug: string): Promise<NewsArticle | undefined> {
 	const row = await getArticleRowBySlug(slug);
 	if (!row) return undefined;
