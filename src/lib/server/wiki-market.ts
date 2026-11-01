@@ -207,9 +207,10 @@ function marketDeal(price: number, source: 'avg' | 'last'): WikiPriceDeal {
 	};
 }
 
-function spreadSort(a: WikiSpreadItem, b: WikiSpreadItem): number {
+function profitSort(a: WikiSpreadItem, b: WikiSpreadItem): number {
 	return (
-		Math.abs(b.profitPerStack) - Math.abs(a.profitPerStack) ||
+		b.profitPerStack - a.profitPerStack ||
+		b.marginPct - a.marginPct ||
 		b.trades24h - a.trades24h ||
 		a.name.localeCompare(b.name)
 	);
@@ -266,35 +267,28 @@ function buildSpreadCandidates(feed: WikiFeed): WikiSpreadItem[] {
 }
 
 /**
- * The ten largest per-stack gaps between an open shop and the 24h market.
- * Items with both shop sides use the shop-to-shop spread; a missing side falls
- * back to the 24h weighted average (or the last trade). Items traded in the
- * last day come first; non-zero spreads are preferred over flat ones, and
- * stale rows only fill leftover slots.
+ * The ten most profitable per-stack gaps between an open shop and the 24h
+ * market. Items with both shop sides use the shop-to-shop spread; a missing
+ * side falls back to the 24h weighted average (or the last trade). Only
+ * positive spreads are returned, sorted by profit per stack.
  */
-export function findMarketSpreads(feed: WikiFeed, limit = 10): WikiSpreadItem[] {
+export function findProfitableSpreads(feed: WikiFeed, limit = 10): WikiSpreadItem[] {
 	const size = Math.min(Math.max(Math.trunc(limit), 1), 10);
-	const candidates = buildSpreadCandidates(feed);
-	const recent = candidates.filter((item) => item.trades24h >= 1);
-	const picked = recent
-		.filter((item) => item.profitPerItem !== 0)
-		.sort(spreadSort)
-		.slice(0, size);
+	const candidates = buildSpreadCandidates(feed).filter((item) => item.profitPerItem > 0);
+	const recent = candidates.filter((item) => item.trades24h >= 1).sort(profitSort);
+	const picked = recent.slice(0, size);
 	if (picked.length < size) {
-		const flat = recent
-			.filter((item) => item.profitPerItem === 0)
-			.sort(spreadSort)
-			.slice(0, size - picked.length);
-		picked.push(...flat);
+		const staleShop = candidates
+			.filter(
+				(item) =>
+					item.trades24h === 0 &&
+					item.buy.source === 'shop' &&
+					item.sell.source === 'shop'
+			)
+			.sort(profitSort);
+		picked.push(...staleShop.slice(0, size - picked.length));
 	}
-	if (picked.length < size) {
-		const stale = candidates
-			.filter((item) => item.trades24h === 0 && item.profitPerItem !== 0)
-			.sort(spreadSort)
-			.slice(0, size - picked.length);
-		picked.push(...stale);
-	}
-	return picked.sort(spreadSort);
+	return picked;
 }
 
 function weightedAverage(trades: WikiTrade[]): number | null {

@@ -3,7 +3,7 @@ import { getMeta, setMeta } from '../src/lib/server/db';
 import { serverEnv } from '../src/lib/server/env';
 import {
 	fetchWikiMarketFeed,
-	findMarketSpreads,
+	findProfitableSpreads,
 	type WikiPriceDeal,
 	type WikiSpreadItem
 } from '../src/lib/server/wiki-market';
@@ -66,7 +66,7 @@ function signedGold(value: number): string {
 function dealText(deal: WikiPriceDeal): string {
 	const price = `**${formatPrice(deal.price)}g**${deal.source === 'shop' ? '' : ' (est.)'}`;
 	if (deal.source !== 'shop' || deal.region === null) return `${price} at **${deal.shop}**`;
-	return `${price} at **${deal.shop}** — ${placeLabel(deal.region)}`;
+	return `${price} at **${deal.shop}** (${wikiRegionName(deal.region)})`;
 }
 
 function bestShopPrice(
@@ -360,53 +360,41 @@ async function postSpreadBoard(
 	if (!channel) return false;
 
 	const fields = items.map((item, index) => {
-		const result =
-			item.profitPerItem > 0 ? 'Profit' : item.profitPerItem < 0 ? 'Loss' : 'Flat';
-		const market = [
-			`Market **${formatPrice(item.marketAvg)}g avg**`,
-			`last **${formatPrice(item.lastPrice)}g**`,
-			`${formatQty(item.sold24h)} sold / ${formatQty(item.trades24h)} trades`
-		].join(' · ');
+		const trades = `${formatQty(item.trades24h)} ${item.trades24h === 1 ? 'trade' : 'trades'}`;
 		return {
-			name: `${index + 1}. ${item.name}`,
+			name: `${index + 1}. ${item.name} — ${signedGold(item.profitPerItem)}/item · ${signedGold(item.profitPerStack)}/stack`,
 			value: [
-				`Buy ${dealText(item.buy)} · Sell ${dealText(item.sell)}`,
-				market,
-				`**${result} ${signedGold(item.profitPerItem)}/item** · **${signedGold(item.profitPerStack)}/stack** · ${formatPct(item.marginPct)}`
+				`Buy ${dealText(item.buy)} → Sell ${dealText(item.sell)}`,
+				`Market **${formatPrice(item.marketAvg)}g avg** · last **${formatPrice(item.lastPrice)}g** · ` +
+					`${formatQty(item.sold24h)} sold / ${trades} · ${formatPct(item.marginPct)}`
 			].join('\n'),
 			inline: false
 		};
 	});
 
-	const fewer =
-		items.length < 10
-			? ` Only ${items.length} ${items.length === 1 ? 'item has' : 'items have'} enough shop or market data right now.`
-			: '';
 	const embed = new EmbedBuilder()
-		.setColor(COLORS.ask)
-		.setAuthor({ name: 'Market spread board · hourly' })
+		.setColor(COLORS.bid)
+		.setAuthor({ name: 'Market profit board · hourly' })
 		.setTitle(
 			items.length >= 10
-				? 'Top 10 profit & loss spreads'
-				: `${items.length} profit & loss ${items.length === 1 ? 'spread' : 'spreads'}`
+				? 'Top 10 profitable items'
+				: `${items.length} profitable ${items.length === 1 ? 'item' : 'items'}`
 		)
 		.setURL(WIKI_MARKET_PAGE)
 		.setDescription(
-			`Largest per-stack gaps in the best open-shop prices, ranked by absolute spread. ` +
-				`Shop-to-shop is used when both sides are open; a missing side uses the 24h average (or last trade). ` +
-				`Positive = buy-low/sell-high; negative = the shop is worse than the market. ` +
-				`Stack size ${WIKI_STACK_SIZE}. Feed updated ${timeAgo(feed.generated)}.${fewer}`
+			`Positive spreads only. Best open-shop buy and sell prices, with the 24h market for context. ` +
+				`Ranked by profit per ${WIKI_STACK_SIZE}-stack. Feed updated ${timeAgo(feed.generated)}.`
 		)
 		.addFields(fields)
 		.setTimestamp(new Date());
 
 	try {
 		await channel.send({ embeds: [footer(embed)] });
-		console.log(`[bot] Posted ${items.length} market spreads to #${channel.name}.`);
+		console.log(`[bot] Posted ${items.length} profitable spreads to #${channel.name}.`);
 		return true;
 	} catch (error) {
 		console.error(
-			`[bot] Could not post the market spread board to #${channel.name}:`,
+			`[bot] Could not post the profit board to #${channel.name}:`,
 			error instanceof Error ? error.message : error
 		);
 		return false;
@@ -419,7 +407,7 @@ async function maybePostSpreadBoard(client: Client, feed: WikiFeed): Promise<voi
 	const interval = serverEnv.wikiMarketProfitMinutes * 60_000;
 	if (last && Date.now() - last < interval) return;
 
-	const items = findMarketSpreads(feed, 10);
+	const items = findProfitableSpreads(feed, 10);
 	if (!items.length) {
 		// No qualifying spread this hour; check again on the next interval.
 		await setMeta('wiki:last_profit_at', Date.now());
