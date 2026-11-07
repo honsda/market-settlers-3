@@ -6,10 +6,13 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"preview": "vite preview",
-		"start": "node build/index.js",
+		"preview": "npm run build && wrangler dev",
+		"deploy": "npm run build && wrangler deploy",
+		"deploy:bot": "wrangler deploy --config wrangler.bot.jsonc",
+		"deploy:all": "npm run deploy && npm run deploy:bot",
+		"bot:cloudflare:dev": "wrangler dev --config wrangler.bot.jsonc",
 		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.cloudflare.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"bot": "tsx watch bot/index.ts",
 		"bot:start": "tsx --tsconfig tsconfig.bot.json bot/index.ts",
@@ -20,7 +23,8 @@
 		"dev:all": "concurrently -n web,bot -c cyan,magenta \"npm:dev\" \"npm:bot\""
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-node": "^6.0.0",
+		"@cloudflare/workers-types": "^5.20261106.1",
+		"@sveltejs/adapter-cloudflare": "^8.0.2",
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@tailwindcss/vite": "^4.3.3",
@@ -31,9 +35,11 @@
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.3.3",
 		"typescript": "^6.0.3",
-		"vite": "^8.3.0"
+		"vite": "^8.3.0",
+		"wrangler": "^4.158.0"
 	},
 	"dependencies": {
+		"@cloudflare/containers": "^0.3.7",
 		"@supabase/supabase-js": "^2.118.0",
 		"@tiptap/core": "^3.32.2",
 		"@tiptap/extension-image": "^3.32.2",
@@ -45,7 +51,8 @@
 	},
 	"allowScripts": {
 		"esbuild": true,
-		"fsevents": true
+		"fsevents": true,
+		"workerd": true
 	},
 	"imports": {
 		"#lib": "./src/lib/index.ts",

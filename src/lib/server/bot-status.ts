@@ -14,9 +14,12 @@ export async function getBotStatus(): Promise<BotStatus> {
 		]);
 
 	const lastSeen = Number(lastSeenRaw ?? 0) || null;
-	const configured = Boolean(serverEnv.discordToken && serverEnv.discordClientId);
 	const channelId = channelIdRaw || serverEnv.discordAlertChannelId || null;
 	const clientId = clientIdRaw || serverEnv.discordClientId;
+	// The web app does not run the bot, so it should not need the bot token.
+	// The bot records its application ID and heartbeat in the shared database;
+	// either one is enough to know that Discord is set up.
+	const configured = Boolean(clientId || lastSeen);
 
 	return {
 		configured,

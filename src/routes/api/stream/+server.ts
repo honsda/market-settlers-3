@@ -7,9 +7,16 @@ import { getRevision } from '../../../lib/server/db';
  * we watch a revision counter in the shared database and tell the client to
  * refetch when it changes.
  */
+// Workers cap subrequests per invocation. Poll every five seconds and let
+// EventSource reconnect after four minutes so a free-plan Worker stays under
+// 50 database calls per connection (48 polls + the initial revision read).
+const POLL_MS = 5_000;
+const MAX_CONNECTION_MS = 4 * 60_000;
+
 export const GET: RequestHandler = ({ request }) => {
 	const encoder = new TextEncoder();
 	let timer: ReturnType<typeof setInterval> | undefined;
+	let lifetime: ReturnType<typeof setTimeout> | undefined;
 
 	const stream = new ReadableStream<Uint8Array>({
 		async start(controller) {
@@ -30,6 +37,7 @@ export const GET: RequestHandler = ({ request }) => {
 				if (closed) return;
 				closed = true;
 				if (timer) clearInterval(timer);
+				if (lifetime) clearTimeout(lifetime);
 				try {
 					controller.close();
 				} catch {
@@ -66,13 +74,15 @@ export const GET: RequestHandler = ({ request }) => {
 			}
 
 			send('hello', { revision: last, ts: Date.now() });
-			timer = setInterval(() => void tick(), 2500);
+			timer = setInterval(() => void tick(), POLL_MS);
+			lifetime = setTimeout(close, MAX_CONNECTION_MS);
 
 			request.signal.addEventListener('abort', close);
 			if (request.signal.aborted) close();
 		},
 		cancel() {
 			if (timer) clearInterval(timer);
+			if (lifetime) clearTimeout(lifetime);
 		}
 	});
 

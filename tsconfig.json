@@ -3,5 +3,6 @@
 	"compilerOptions": {
 		"strict": true
 	},
-	"include": ["src", "bot", "scripts", "vite.config.ts"]
+	"include": ["src", "bot", "scripts", "vite.config.ts"],
+	"exclude": ["bot/cloudflare.ts"]
 }

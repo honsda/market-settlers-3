@@ -15,6 +15,7 @@ import { registerCommands } from './register';
 import { startAlertWatcher, stopAlertWatcher } from './watcher';
 import { startNewsWatcher, stopNewsWatcher } from './news';
 import { startWikiMarketWatcher, stopWikiMarketWatcher } from './wiki-market';
+import { startHealthServer, stopHealthServer } from './health';
 import { getMeta, setMeta } from '../src/lib/server/db';
 import { serverEnv } from '../src/lib/server/env';
 
@@ -34,6 +35,13 @@ const client = new Client({
 
 let heartbeat: NodeJS.Timeout | null = null;
 let shuttingDown = false;
+
+startHealthServer(() => ({
+	ready: client.isReady(),
+	tag: client.user?.tag ?? null,
+	guilds: client.isReady() ? client.guilds.cache.size : 0,
+	uptime: Math.round(process.uptime())
+}));
 
 async function beat(): Promise<void> {
 	if (shuttingDown) return;
@@ -174,6 +182,7 @@ async function shutdown(signal: string): Promise<void> {
 	stopAlertWatcher();
 	stopNewsWatcher();
 	stopWikiMarketWatcher();
+	stopHealthServer();
 	if (heartbeat) clearInterval(heartbeat);
 	try {
 		await setMeta('bot:last_seen', 0);

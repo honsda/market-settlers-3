@@ -1,0 +1,19 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "settlers3",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2026-11-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		// Cloudflare Workers cannot use the SQLite backend. All market data
+		// lives in Supabase so the Discord bot and the web app stay in sync.
+		"MARKET_BACKEND": "supabase"
+	}
+}

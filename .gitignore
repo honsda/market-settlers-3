@@ -5,6 +5,12 @@ node_modules/
 build/
 .svelte-kit/
 dist/
+.wrangler/
+
+# Cloudflare local secrets
+.dev.vars
+.dev.vars.*
+worker-configuration.d.ts
 
 # Local data (the shared market database)
 data/

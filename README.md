@@ -112,44 +112,77 @@ The bot checks `news_articles` every `NEWS_POLL_SECONDS` (default **20s**) for p
 
 Set `DISCORD_NEWS_CHANNEL_ID` to point at a specific channel. If it is empty, the bot looks for a channel named **#news** in `DISCORD_GUILD_ID` (or in any server it has joined). The resolved ID is remembered in `meta` under `bot:news_channel_id`.
 
-### Deploy the bot
+### Deploy the bot to Cloudflare Containers
 
-The bot is a long-running gateway worker: it keeps a WebSocket connection to Discord and does not listen on a port. It needs **Node.js 22.13+** (Node 24 recommended) and **Supabase** — free bot panels use ephemeral storage, so SQLite would reset on every restart.
+The bot is a long-running Discord gateway process: it holds a WebSocket open, so it cannot run as a normal Cloudflare Worker. It runs in a **Cloudflare Container** instead. The Worker in `wrangler.bot.jsonc` manages the container lifecycle, a Cron Trigger wakes it every five minutes, and the image is built from the repo's `Dockerfile`.
 
-#### Wispbyte (free, no card)
+Cloudflare Containers require a **Workers Paid** plan. A `basic` container (1 GiB RAM) is enough for this bot; it runs continuously while the gateway connection is open. See [Containers pricing](https://developers.cloudflare.com/containers/platform/pricing/).
 
-Wispbyte's free plan gives 512 MB RAM and 1 GB disk, runs 24/7, and does not ask for a payment method. Log into the panel every couple of weeks to keep the server active.
+You can deploy with **Workers Builds** (no local Docker required) or from your machine with Docker.
 
-1. **Create a server** and choose the **Node.js 22** Docker image (Node.js 24 also works).
-2. Open **Files** and either connect this GitHub repository (`honsda/market-settlers-3`, branch `main`) or upload the project. With GitHub, enable **Auto Update** if you want restarts to pull the latest commit.
-3. Open **Startup** and replace the startup command with:
+#### Option A: Workers Builds (no Docker)
+
+1. In the Cloudflare dashboard, create a Worker named `settlers3-bot`: **Workers & Pages → Create application → Hello World**. The name must match `name` in `wrangler.bot.jsonc`.
+2. Open the Worker → **Settings → Variables and Secrets** and add the required runtime secrets from the table below: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `APP_URL`. These must be runtime secrets, not Build variables.
+3. Go to **Settings → Builds → Connect** and select:
+   - Repository: `honsda/market-settlers-3`
+   - Branch: `main`
+   - Root directory: `/` (repository root)
+   - Build command: leave empty, because Workers Builds installs dependencies automatically. Use `npm ci` if the UI requires one.
+   - Deploy command: `npm run deploy:bot`
+   - Turn off preview/non-production builds. Containers only update through a full `wrangler deploy`, not `wrangler versions upload`.
+4. Push a commit to `main` (or click **Deploy** / **Retry build**). The first build takes several minutes while Cloudflare builds and provisions the container image.
+5. Open `https://settlers3-bot.<your-subdomain>.workers.dev/health`. `ready` becomes `true` once Discord connects.
+
+#### Option B: Deploy from your machine (Docker)
+
+You need Docker running locally for this path.
+
+1. Log in and create the bot Worker's secrets. These are separate from the website Worker's secrets:
 
    ```bash
-   cd /home/container; if [[ -d .git ]] && [[ ${AUTO_UPDATE:-0} == "1" ]]; then git pull; fi; mkdir -p data; if [ -f package.json ]; then /usr/local/bin/npm install --omit=dev --no-audit --no-fund; fi; exec /home/container/node_modules/.bin/tsx --tsconfig tsconfig.bot.json bot/index.ts
+   npx wrangler login
+   npx wrangler secret put DISCORD_TOKEN --config wrangler.bot.jsonc
+   npx wrangler secret put DISCORD_CLIENT_ID --config wrangler.bot.jsonc
+   npx wrangler secret put SUPABASE_URL --config wrangler.bot.jsonc
+   npx wrangler secret put SUPABASE_SECRET_KEY --config wrangler.bot.jsonc
+   npx wrangler secret put APP_URL --config wrangler.bot.jsonc
    ```
 
-   If the panel asks for a main/startup file, point it at `bot/index.ts` (or use **Use on startup** on that file). The command above is what actually runs the bot.
+   Add the optional values from the table below the same way. Wrangler offers to create the Worker when you add the first secret.
 
-4. Add the environment variables below under **Startup → Environment Variables**.
-5. Start the server. The console should show `Signed in as ...`; the bot registers its slash commands and creates `Dweller` and `#staff-verify` if they are missing.
+2. Deploy the container image:
 
-The startup command installs production dependencies (including `tsx`) on boot and runs the bot directly, so there is no build step. `tsconfig.bot.json` is used because the generated SvelteKit tsconfig is not present on the panel.
+   ```bash
+   npm run deploy:bot
+   ```
 
-If the Node image is older than 22.13, choose a newer one — `node:sqlite` is imported even when Supabase is the backend.
+   This runs `wrangler deploy --config wrangler.bot.jsonc`. The first deploy builds and uploads the image. The Cron Trigger (or a request to `/health`) starts the container, and later deploys roll out a fresh image.
 
-If the console says `Missing main file`, set the startup/main file to `bot/index.ts` (or use **Use on startup** on it). If `npm install` fails with `EACCES ... /home/container/node_modules`, delete `node_modules` and `.npm` in **Files**, restart, and if it still fails ask Wispbyte support to check the volume ownership. The bot also needs the panel login every couple of weeks; otherwise the free server may be paused.
+3. Open `https://settlers3-bot.<your-subdomain>.workers.dev/health`. The response includes `ready`, the bot tag, guild count and uptime. The health route starts the container if it is not already running.
 
-#### Northflank / container hosts
+The bot registers its slash commands on boot. If you only changed command definitions and do not want to rebuild the container, run `npm run bot:deploy` locally against the same Discord application.
 
-The repo also ships a `Dockerfile` for hosts that build containers. The bot is a **worker**, not a website: it holds a Discord gateway connection and does not listen on a port.
+If a Workers Builds deploy fails:
 
-1. Northflank → **Create service** → **Build from Git** → connect `honsda/market-settlers-3` on `main`.
-2. Build type: **Dockerfile** (auto-detected at the repository root).
-3. Service type: **Worker**. Do not expose or health-check a port.
-4. Instance: the free **Sandbox** plan is enough (the bot idles around 100–200 MB).
-5. Add the environment variables below, then deploy. On the first boot the bot registers its slash commands and creates the `Dweller` role and `#staff-verify` channel.
+- **Worker name mismatch** — the Worker in the dashboard must be named exactly `settlers3-bot`.
+- **Required secrets missing** — add them under **Settings → Variables and Secrets**, not under Build variables. Build variables are only available during the build.
+- **`/health` returns 404 or 502 on the first deploy** — wait several minutes for the container image to finish provisioning, then retry. Check **Logs** for the bot process.
 
-The image runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.ts`). `tsx` is a runtime dependency, so `npm ci --omit=dev` is enough.
+#### How the container stays online
+
+- `wrangler.bot.jsonc` sets `sleepAfter = "24h"` and a `*/5 * * * *` Cron Trigger. The cron calls `ensureRunning()`, which starts a stopped container or renews the idle timer of a running one.
+- If Cloudflare restarts or moves the container, the process reconnects to Discord on boot. The cron brings it back within five minutes.
+- `bot/health.ts` exposes `GET /health` on port 3000 only when `BOT_HEALTH_PORT` is set. Cloudflare uses it as the container readiness probe.
+- Container logs appear in the Cloudflare dashboard under **Workers & Pages → `settlers3-bot` → Logs**; live tailing is available there.
+
+To run the bot Worker and its container locally (Docker required):
+
+```bash
+npm run bot:cloudflare:dev
+```
+
+For local development without Docker, keep using `npm run bot` (or `npm run dev:all`); it runs the same `bot/index.ts` directly.
 
 #### Environment variables
 
@@ -158,15 +191,16 @@ The image runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.
 | `DISCORD_TOKEN` | yes | Bot token from the Developer Portal. |
 | `DISCORD_CLIENT_ID` | yes | Application ID, used for command registration and the invite link. |
 | `DISCORD_GUILD_ID` | recommended | Makes new slash commands appear instantly. |
-| `APP_URL` | yes | Your Vercel URL, used in Discord links. |
-| `SUPABASE_URL` | yes | Shared database with the Vercel deployment. |
+| `APP_URL` | yes | Public website URL, used in Discord links. |
+| `SUPABASE_URL` | yes | Shared database with the web deployment. |
 | `SUPABASE_SECRET_KEY` | yes | Server-side key; never expose it to the browser. |
-| `NEWS_MODERATOR_KEY` | recommended | Staff key for `/news/moderation`; without it image review is disabled. |
 | `DISCORD_ALERT_CHANNEL_ID` | optional | Can also be set later with `/alerts`. |
 | `DISCORD_NEWS_CHANNEL_ID` | optional | Defaults to the bot's **#news** channel lookup. |
 | `ALERT_*`, `NEWS_POLL_SECONDS`, `WIKI_MARKET_*` | optional | Tuning values described in `.env.example`. |
 
-Do **not** set `MARKET_BACKEND=sqlite` on either host — the panel/container filesystem is ephemeral and the web app on Vercel cannot share it. With Supabase configured the bot is stateless and restarts safely.
+The container forces `MARKET_BACKEND=supabase`. Do **not** switch it to SQLite: the container filesystem is ephemeral and the website Worker cannot read it. With Supabase configured the bot is stateless and restarts safely.
+
+The bot image uses Node.js 24 and runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.ts`). `tsx` is a runtime dependency, so `npm ci --omit=dev` is enough.
 
 ---
 
@@ -254,7 +288,7 @@ The editor uses **TipTap** for headings, bold/italic/underline, lists, quotes, l
 
 ### Image review
 
-Uploaded images are stored in `news_media` with `status = 'pending'`. They are unlisted but fetchable by their random ID so the author and staff can preview them. An article can be submitted for review with pending images, but it cannot be published until **every attached image and the cover** is approved. Uploads are capped at 4 MB (and larger browser images are compressed client-side) to stay under Vercel's serverless request-body limit. The moderator desk is a client-side page that asks for `NEWS_MODERATOR_KEY` and sends it as `x-news-moderator-key`; without that env var the endpoint returns `503`.
+Uploaded images are stored in `news_media` with `status = 'pending'`. They are unlisted but fetchable by their random ID so the author and staff can preview them. An article can be submitted for review with pending images, but it cannot be published until **every attached image and the cover** is approved. Uploads are capped at 4 MB (and larger browser images are compressed client-side) to stay under serverless request-body limits. The moderator desk is a client-side page that asks for `NEWS_MODERATOR_KEY` and sends it as `x-news-moderator-key`; without that env var the endpoint returns `503`.
 
 To use it:
 
@@ -286,8 +320,12 @@ Miraheze is a free MediaWiki farm, so it is good at community editing, page hist
 | Script | Description |
 | --- | --- |
 | `npm run dev` | Vite dev server with HMR. |
-| `npm run build` | Production build (Node adapter → `build/`). |
-| `npm start` | Run the production server (`node build/index.js`). |
+| `npm run build` | Production build for Cloudflare Workers (`.svelte-kit/cloudflare`). |
+| `npm run preview` | Build and preview the Worker locally with `wrangler dev`. |
+| `npm run deploy` | Build and deploy the website to Cloudflare Workers. |
+| `npm run deploy:bot` | Build and deploy the Discord bot to Cloudflare Containers. |
+| `npm run deploy:all` | Deploy the website and the bot. |
+| `npm run bot:cloudflare:dev` | Run the bot Worker and container locally (Docker required). |
 | `npm run check` | Svelte + TypeScript diagnostics. |
 | `npm run bot` | Discord bot in watch mode. |
 | `npm run bot:start` | Discord bot without watch mode. |
@@ -325,7 +363,7 @@ Miraheze is a free MediaWiki farm, so it is good at community editing, page hist
 | `SUPABASE_ACCESS_TOKEN` | — | Personal access token used only by `npm run db:push-schema`. |
 | `NEWS_MODERATOR_KEY` | — | Staff key for `/news/moderation`; required to approve images. |
 
-`.env.local` takes precedence over `.env`. The web app, scripts and bot all load the same files (`src/lib/server/env.ts` uses `process.loadEnvFile`).
+`.env.local` takes precedence over `.env`. The web app, scripts and bot all load the same files (`src/lib/server/env.ts` uses `process.loadEnvFile`). On Cloudflare, set the website values on the `settlers3` Worker and the bot values on the `settlers3-bot` Worker; both are exposed to the app as `process.env`.
 
 ---
 
@@ -369,6 +407,8 @@ src/
     discord/              bot status, commands and alert feed
     api/                  offers, market, history, alerts, server, guilds, stream, news
 bot/
+  cloudflare.ts            Cloudflare Worker and container class for the bot
+  health.ts                HTTP readiness endpoint used by Cloudflare Containers
   index.ts                 Discord client, heartbeat, interactions
   commands.ts              slash commands, autocomplete, cancel button
   applications.ts          /apply DM flow, /initapply guide, #apply cleanup, review
@@ -385,8 +425,11 @@ supabase/
   schema.sql               Postgres tables, indexes, RLS and revision RPC
 data/
   market.db                created on first run (gitignored)
-Dockerfile                 production image for the Discord bot (container hosts)
+Dockerfile                 Cloudflare Containers image for the Discord bot
+wrangler.jsonc             website Worker name, assets and compatibility settings
+wrangler.bot.jsonc         bot Worker, container and Cron Trigger settings
 tsconfig.bot.json          container-safe TypeScript config for `bot:start`
+tsconfig.cloudflare.json   type-check config for the bot Worker
 ```
 
 ### Data model
@@ -430,15 +473,53 @@ Rate limiting is in-process (`src/lib/server/rate-limit.ts`) and keyed by IP.
 
 ## Deployment
 
-The project uses `@sveltejs/adapter-node`, so `npm run build` produces a self-contained Node server:
+### Cloudflare Workers (website)
+
+The web app uses `@sveltejs/adapter-cloudflare` and deploys to Workers Static Assets. Workers cannot run `node:sqlite`, so the deployed site must use Supabase; the SQLite backend is still available for local development.
+
+1. Create a Supabase project and apply `supabase/schema.sql` (paste it into the SQL editor, or run `SUPABASE_ACCESS_TOKEN=sbp_... npm run db:push-schema`).
+2. Log in and store the production configuration as Worker secrets:
+
+   ```bash
+   npx wrangler login
+   npx wrangler secret put SUPABASE_URL
+   npx wrangler secret put SUPABASE_SECRET_KEY
+   npx wrangler secret put NEWS_MODERATOR_KEY   # optional, enables image moderation
+   npx wrangler secret put APP_URL              # e.g. https://settlers3.example.workers.dev
+   ```
+
+3. Deploy:
+
+   ```bash
+   npm run deploy
+   ```
+
+   That runs `vite build` and `wrangler deploy`. The Worker name, compatibility date, static-assets directory and `MARKET_BACKEND=supabase` live in `wrangler.jsonc`.
+
+   To deploy both the website and the Discord bot in one command, run `npm run deploy:all` (Docker must be running for the bot image).
+
+4. Deploy the Discord bot to Cloudflare Containers (see [Deploy the bot to Cloudflare Containers](#deploy-the-bot-to-cloudflare-containers)). It uses the same `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `APP_URL`, but its secrets are stored on the separate `settlers3-bot` Worker.
+
+To deploy the website with Workers Builds instead of the CLI, create a Worker named `settlers3`, set its build command to `npm run build` and its deploy command to `npx wrangler deploy`, then connect this repository on the `main` branch.
+
+To test the production Worker locally:
 
 ```bash
-npm ci
-npm run build
-APP_URL=https://market.example.com PORT=3000 node build/index.js
+npm run preview        # vite build + wrangler dev
 ```
 
-Run the bot as a second process with `npm run bot:start`. With Supabase configured, both processes only need the same `SUPABASE_URL` and `SUPABASE_SECRET_KEY`; there is no shared volume to manage. The revision counter and alert queue live in Postgres, so multiple web instances and the bot stay in sync. Set `NEWS_MODERATOR_KEY` on the web host or the newsroom cannot approve images.
+`wrangler dev` loads `.env` (or `.dev.vars`) automatically, so a Supabase-configured local `.env` is enough. In production, the Worker gets the same values from its secrets and variables.
+
+#### Cloudflare notes
+
+- Live updates (`/api/stream`) poll Supabase every 5 seconds and the client reconnects every 4 minutes. This keeps each Worker invocation under the free plan's 50-subrequest limit.
+- Rate limiting is in-memory and therefore per isolate. It is fine for a community market, but not a hard security boundary; add Cloudflare WAF rules if you need stricter limits.
+- Uploaded news images are stored as base64 in Postgres (4 MB cap), so no R2 bucket is required.
+- The free plan's CPU budget is tight for server-side rendering. If you see CPU-limit errors under real traffic, enable Workers Paid.
+
+### Self-hosted Node (optional)
+
+If you also want a plain Node deployment, install `@sveltejs/adapter-node`, swap the adapter import in `vite.config.ts`, rebuild, and run `node build/index.js`. With Supabase configured, the web app and bot only need the same `SUPABASE_URL` and `SUPABASE_SECRET_KEY`; the revision counter and alert queue live in Postgres, so multiple web instances and the bot stay in sync.
 
 For a SQLite-only deployment, set `MARKET_BACKEND=sqlite`, keep `MARKET_DB_PATH` on shared storage, and run the bot on the same host. SQLite is in WAL mode, so the two processes can read and write concurrently.
 

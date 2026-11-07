@@ -177,7 +177,16 @@ function openDatabase(): DatabaseSync {
 // is opened lazily so a Supabase-only deployment never touches the filesystem.
 const globalScope = globalThis as typeof globalThis & { __ms3Database?: DatabaseSync };
 
+const runningOnWorkers =
+	typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+
 function database(): DatabaseSync {
+	if (runningOnWorkers) {
+		throw new Error(
+			'SQLite is not available on Cloudflare Workers. Set SUPABASE_URL and SUPABASE_SECRET_KEY ' +
+				'(and keep MARKET_BACKEND=supabase) to use Supabase instead.'
+		);
+	}
 	return (globalScope.__ms3Database ??= openDatabase());
 }
 

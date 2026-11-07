@@ -1,0 +1,42 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "settlers3-bot",
+	"main": "bot/cloudflare.ts",
+	"compatibility_date": "2026-11-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+	"triggers": {
+		// Wake the bot after a host restart and renew the container's idle timer.
+		"crons": ["*/5 * * * *"]
+	},
+	"containers": [
+		{
+			"class_name": "BotContainer",
+			"image": "./Dockerfile",
+			"instance_type": "basic",
+			"max_instances": 1,
+			"observability": {
+				"enabled": true
+			}
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "BOT_CONTAINER",
+				"class_name": "BotContainer"
+			}
+		]
+	},
+	"exports": {
+		"BotContainer": {
+			"type": "durable-object",
+			"storage": "sqlite"
+		}
+	},
+	"secrets": {
+		"required": ["DISCORD_TOKEN", "DISCORD_CLIENT_ID", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "APP_URL"]
+	}
+}

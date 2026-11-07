@@ -72,7 +72,7 @@ export interface ModerationQueue {
 }
 
 const MAX_BODY_CHARS = 160_000;
-// Keep uploads under Vercel's 4.5 MB serverless request-body limit once the
+// Keep uploads under serverless 4.5 MB request-body limits once the
 // multipart envelope is included.
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 

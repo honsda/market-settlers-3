@@ -3,6 +3,7 @@
 .vscode
 node_modules
 .svelte-kit
+.wrangler
 build
 static
 supabase
@@ -11,5 +12,7 @@ data
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 *.log
 README.md

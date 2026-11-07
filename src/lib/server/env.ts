@@ -13,8 +13,10 @@ function loadDotEnv(): void {
 	loaded = true;
 	for (const file of ['.env.local', '.env']) {
 		const path = resolve(file);
-		if (!existsSync(path)) continue;
 		try {
+			// Workers has no writable project directory; skip the filesystem
+			// when it is unavailable and rely on the platform's env bindings.
+			if (typeof process.loadEnvFile !== 'function' || !existsSync(path)) continue;
 			process.loadEnvFile(path);
 		} catch {
 			// A malformed env file should not take the market down.
