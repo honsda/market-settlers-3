@@ -60,7 +60,7 @@ npm run dev:all
    DISCORD_NEWS_CHANNEL_ID=...       # optional; otherwise the bot finds #news by name
    ```
 
-3. Invite the bot with the `bot` and `applications.commands` scopes. Grant **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Messages**, **Manage Roles** and **Manage Channels**. Manage Messages keeps `#apply` clean and lets the guides be pinned; the last two let it create the Dweller role and the admin-only `#staff-verify` channel; `/alerts`, `/initapply`, `/initrule` and `/rolecitizen` additionally check for **Manage Server** on the person running them.
+3. Invite the bot with the `bot` and `applications.commands` scopes. Grant **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Messages**, **Manage Roles** and **Manage Channels**. Manage Messages keeps `#apply` clean, lets the guides be pinned, and publishes market posts to announcement-channel followers; the last two let it create the Dweller role and the admin-only `#staff-verify` channel; `/alerts`, `/initapply`, `/initrule` and `/rolecitizen` additionally check for **Manage Server** on the person running them.
 4. Under **Bot → Privileged Gateway Intents**, enable **Server Members** (needed for join roles and member lookups). Message Content is not needed — DMs sent to the bot are exempt, and the `#apply` cleanup never reads message text.
 5. Run `npm run bot:deploy` once (or just `npm run bot` — it registers commands on startup).
 6. Start it with `npm run bot` or `npm run dev:all`.
@@ -74,7 +74,7 @@ npm run dev:all
 | `/offers [item] [side] [player]` | Browse live offers with any combination of filters. |
 | `/player ign:<name>` | Guild, open offers, locked value and last activity for a trader. |
 | `/post side item quantity price ign [guild] [contact] [note] [x] [y] [z]` | Publish an offer straight from Discord. The reply is ephemeral and includes a **Cancel this offer** button. |
-| `/alerts channel:<#channel>` | Point market alerts at a channel. Requires **Manage Server**. |
+| `/alerts channel:<#channel>` | Point market posts at a text or announcement channel. Announcement-channel posts are published to its followers. Requires **Manage Server**. |
 | `/apply` | Starts a membership application. Only works in a channel named **#apply**; the five questions are asked in DMs. |
 | `/initapply` | Posts or refreshes the application guide embed in **#apply** and pins it. Requires **Manage Server**. |
 | `/initrule [channel]` | Posts or refreshes a pinned general community rules embed. Defaults to the current text channel. Requires **Manage Server**. |
@@ -222,6 +222,8 @@ The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) and:
 - labels every pulse and move with the island/area and region (for example `Rainlands / Morvethan`);
 - uses one Discord field per item + area, with volume, average, gold traded and current best shop prices, so updates stay readable without losing detail;
 - suppresses repeat move alerts for the same item + region for `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` (default **60m**).
+
+When the configured market channel is an **announcement channel**, every market alert, pulse, move and profit board is automatically published to the channel's followers.
 
 The profit board includes positive spreads only. It uses the shop-to-shop spread when an item has both an **open selling shop** and an **open buying shop**; if a side is missing it falls back to the 24h weighted average (or the last trade). Sold-out and out-of-gold shops are excluded. Items traded in the last 24 hours come first, and stale shop-to-shop rows only fill leftover slots. Its hourly cursor is `wiki:last_profit_at`.
 

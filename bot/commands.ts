@@ -153,7 +153,7 @@ export const commandData = [
 
 	new SlashCommandBuilder()
 		.setName('alerts')
-		.setDescription('Choose where significant market price alerts are posted.')
+		.setDescription('Choose the market channel; announcement channels publish to followers.')
 		.setContexts(InteractionContextType.Guild)
 		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 		.addChannelOption((option) =>
@@ -524,12 +524,13 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
 			await setMeta('bot:alert_channel_id', channel.id);
 			await setMeta('bot:alert_channel_name', channel.name);
+			const publishes = channel.type === ChannelType.GuildAnnouncement;
 			await interaction.reply({
 				embeds: [
 					new EmbedBuilder()
 						.setColor(COLORS.bid)
 						.setDescription(
-							`Price alerts will now be posted in <#${channel.id}>.\nMoves above the configured threshold and new 7-day extremes are queued automatically.`
+							`Market updates will now be posted in <#${channel.id}>${publishes ? ' and published to its followers' : ''}.\nMoves above the configured threshold and new 7-day extremes are queued automatically.`
 						)
 				],
 				flags: MessageFlags.Ephemeral

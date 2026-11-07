@@ -4,6 +4,7 @@ import { getItem } from '../src/lib/market';
 import { getMeta, setMeta } from '../src/lib/server/db';
 import { botConfig } from './config';
 import { alertEmbed } from './format';
+import { publishToFollowers } from './publish';
 
 let timer: NodeJS.Timeout | null = null;
 let stopped = true;
@@ -55,6 +56,7 @@ async function tick(client: Client): Promise<void> {
 						const message = await channel.send({
 							embeds: [alertEmbed(alert, getItem(alert.itemId))]
 						});
+						await publishToFollowers(message);
 						await markAlertPosted(alert.id, message.id);
 					} catch (error) {
 						console.error(

@@ -18,6 +18,7 @@ import {
 } from '../src/lib/wiki-market';
 import { formatPct, formatPrice, formatQty, timeAgo } from '../src/lib/format';
 import { COLORS, dashboardUrl, footer } from './format';
+import { publishToFollowers } from './publish';
 
 const DAY = 24 * 60 * 60 * 1000;
 const MOVE_LIMIT = 4;
@@ -240,7 +241,8 @@ async function postMovers(
 		.setTimestamp(new Date());
 
 	try {
-		await channel.send({ embeds: [footer(embed)] });
+		const message = await channel.send({ embeds: [footer(embed)] });
+		await publishToFollowers(message);
 		const now = Date.now();
 		for (const mover of movers) moveCooldowns.set(mover.key, now);
 		console.log(`[bot] Posted ${movers.length} market move(s) to #${channel.name}.`);
@@ -338,7 +340,8 @@ async function postSummary(
 		.setTimestamp(new Date());
 
 	try {
-		await channel.send({ embeds: [footer(embed)] });
+		const message = await channel.send({ embeds: [footer(embed)] });
+		await publishToFollowers(message);
 		console.log(`[bot] Posted market pulse to #${channel.name} (${trades.length} trades).`);
 		return true;
 	} catch (error) {
@@ -389,7 +392,8 @@ async function postSpreadBoard(
 		.setTimestamp(new Date());
 
 	try {
-		await channel.send({ embeds: [footer(embed)] });
+		const message = await channel.send({ embeds: [footer(embed)] });
+		await publishToFollowers(message);
 		console.log(`[bot] Posted ${items.length} profitable spreads to #${channel.name}.`);
 		return true;
 	} catch (error) {
