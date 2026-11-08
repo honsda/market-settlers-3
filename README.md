@@ -225,7 +225,7 @@ The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) and:
 
 When the configured market channel is an **announcement channel**, every market alert, pulse, move and profit board is automatically published to the channel's followers.
 
-The profit board includes positive spreads only. It uses the shop-to-shop spread when an item has both an **open selling shop** and an **open buying shop**; if a side is missing it falls back to the 24h weighted average (or the last trade). Sold-out and out-of-gold shops are excluded. Items traded in the last 24 hours come first, and stale shop-to-shop rows only fill leftover slots. Its hourly cursor is `wiki:last_profit_at`.
+The profit board includes positive spreads only. It uses the shop-to-shop spread when an item has both an **open selling shop** and an **open buying shop**; if a side is missing it falls back to the 24h weighted average (or the last trade). Sold-out and out-of-gold shops are excluded. Items traded in the last 24 hours come first, and stale shop-to-shop rows only fill leftover slots. Each row shows the world average plus a separate volume-weighted average for every region with trades in the last 24h. Its hourly cursor is `wiki:last_profit_at`.
 
 The cursor is stored in `meta` (`wiki:last_trade_ts`, `wiki:last_summary_at`, `wiki:last_profit_at`, `wiki:last_feed_generated`), so restarting the bot does not replay old trades. On first start it begins from the newest trade in the feed.
 

@@ -70,6 +70,13 @@ function dealText(deal: WikiPriceDeal): string {
 	return `${price} at **${deal.shop}** (${wikiRegionName(deal.region)})`;
 }
 
+function regionAverageText(item: WikiSpreadItem): string {
+	if (!item.regions.length) return '—';
+	return item.regions
+		.map((region) => `${wikiRegionName(region.region)} **${formatPrice(region.avg)}g**`)
+		.join(' · ');
+}
+
 function bestShopPrice(
 	feed: WikiFeed,
 	item: string,
@@ -368,8 +375,9 @@ async function postSpreadBoard(
 			name: `${index + 1}. ${item.name} — ${signedGold(item.profitPerItem)}/item · ${signedGold(item.profitPerStack)}/stack`,
 			value: [
 				`Buy ${dealText(item.buy)} → Sell ${dealText(item.sell)}`,
-				`Market **${formatPrice(item.marketAvg)}g avg** · last **${formatPrice(item.lastPrice)}g** · ` +
-					`${formatQty(item.sold24h)} sold / ${trades} · ${formatPct(item.marginPct)}`
+				`World avg **${formatPrice(item.marketAvg)}g** · last **${formatPrice(item.lastPrice)}g** · ` +
+					`${formatQty(item.sold24h)} sold / ${trades} · ${formatPct(item.marginPct)}`,
+				`Regions: ${regionAverageText(item)}`
 			].join('\n'),
 			inline: false
 		};
@@ -385,8 +393,9 @@ async function postSpreadBoard(
 		)
 		.setURL(WIKI_MARKET_PAGE)
 		.setDescription(
-			`Positive spreads only. Best open-shop buy and sell prices, with the 24h market for context. ` +
-				`Ranked by profit per ${WIKI_STACK_SIZE}-stack. Feed updated ${timeAgo(feed.generated)}.`
+			`Positive spreads only. Best open-shop prices, with volume-weighted 24h averages for the world ` +
+				`and each active region. Ranked by profit per ${WIKI_STACK_SIZE}-stack. ` +
+				`Feed updated ${timeAgo(feed.generated)}.`
 		)
 		.addFields(fields)
 		.setTimestamp(new Date());

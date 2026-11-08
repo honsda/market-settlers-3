@@ -164,6 +164,13 @@ export interface WikiPriceDeal {
 	source: 'shop' | 'avg' | 'last';
 }
 
+export interface WikiRegionAverage {
+	region: number;
+	avg: number;
+	sold: number;
+	trades: number;
+}
+
 export interface WikiSpreadItem {
 	key: string;
 	name: string;
@@ -176,6 +183,7 @@ export interface WikiSpreadItem {
 	lastPrice: number | null;
 	sold24h: number;
 	trades24h: number;
+	regions: WikiRegionAverage[];
 }
 
 function bestOpenShopDeal(
@@ -238,6 +246,22 @@ function buildSpreadCandidates(feed: WikiFeed): WikiSpreadItem[] {
 		const recent = trades.filter((trade) => trade.ts >= cutoff);
 		const avg24h = weightedAverage(recent);
 		const lastPrice = trades.length ? trades[trades.length - 1].price : null;
+		const regionStats = new Map<number, { qty: number; gold: number; trades: number }>();
+		for (const trade of recent) {
+			const stats = regionStats.get(trade.region) ?? { qty: 0, gold: 0, trades: 0 };
+			stats.qty += trade.qty;
+			stats.gold += trade.gold;
+			stats.trades += 1;
+			regionStats.set(trade.region, stats);
+		}
+		const regions = [...regionStats.entries()]
+			.map(([region, stats]) => ({
+				region,
+				avg: stats.gold / stats.qty,
+				sold: stats.qty,
+				trades: stats.trades
+			}))
+			.sort((a, b) => b.sold - a.sold || a.region - b.region);
 		const shopBuy = bestOpenShopDeal(feed, key, 'sell');
 		const shopSell = bestOpenShopDeal(feed, key, 'buy');
 		if (!shopBuy && !shopSell) continue;
@@ -259,7 +283,8 @@ function buildSpreadCandidates(feed: WikiFeed): WikiSpreadItem[] {
 			marketAvg: avg24h,
 			lastPrice,
 			sold24h: recent.reduce((sum, trade) => sum + trade.qty, 0),
-			trades24h: recent.length
+			trades24h: recent.length,
+			regions
 		});
 	}
 
