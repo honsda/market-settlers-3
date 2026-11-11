@@ -49,7 +49,7 @@ npm run dev:all
 
 ## Discord bot setup
 
-> **Free deployment:** the Cloudflare Worker path is documented under [Deploy the bot to Cloudflare Workers (free)](#deploy-the-bot-to-cloudflare-workers-free). The steps below describe the optional gateway bot for local development or an always-on host. The free Worker supports the market commands, `/alerts` and `/initrule`; the application and role features require the gateway.
+> **Free hosting:** the bot can run two ways. **[Render](#deploy-the-bot-to-render-free)** keeps the full gateway bot — `/apply` with its DM conversation, join roles, `#apply` cleanup and presence — and needs a five-minute keep-alive ping. **[Cloudflare Workers](#deploy-the-bot-to-cloudflare-workers-free)** is the always-on fallback with HTTP interactions only. The steps below describe local development or any always-on host.
 
 1. Create an application at <https://discord.com/developers/applications> and add a **Bot**.
 2. Copy the token and Application ID into `.env`:
@@ -130,7 +130,7 @@ Not available in the free Worker:
 - The DM application flow, member-join roles, message-based channel cleanup, and presence
 - Gateway events such as `messageCreate` and `guildMemberAdd`
 
-If you need those later, run the gateway bot on an always-on host with `npm run bot:start`; the `Dockerfile` and `bot/index.ts` still support that path.
+If you need those, use the free [Render](#deploy-the-bot-to-render-free) deployment instead. It runs this same repository's gateway bot from the `Dockerfile` and restores the full command set.
 
 #### 1. Create the Worker and secrets
 
@@ -233,6 +233,88 @@ npm run bot:cloudflare:dev
 ```
 
 Wrangler loads `.env` (or `.dev.vars`) automatically, so a local `.env` with the required values is enough for testing. For the full gateway bot without Cloudflare, use `npm run bot` or `npm run dev:all`.
+
+### Deploy the bot to Render (free)
+
+Render's free **web service** runs the full gateway bot from this repository's `Dockerfile`, so every command works again: `/apply` with its DM conversation, `/initapply`, `/rolecitizen`, member-join roles, `#apply` cleanup and presence. The website can stay on Cloudflare; only the bot moves.
+
+The catch is that Render sleeps a free service after **15 minutes without inbound traffic**, which disconnects the Discord gateway. A five-minute ping avoids that. One service running 24/7 uses roughly 730 of the free plan's 750 instance-hours, so keep the bot as the only free web service in that workspace.
+
+#### 1. Create the service
+
+1. Sign in at <https://dashboard.render.com> with GitHub.
+2. **New → Blueprint**, select `honsda/market-settlers-3`, branch `main`. Render reads `render.yaml`.
+3. Fill in the values it asks for:
+   - `DISCORD_TOKEN` — Bot → Reset Token.
+   - `DISCORD_CLIENT_ID` — General Information → Application ID.
+   - `DISCORD_GUILD_ID` — your server ID. Keeps commands guild-scoped and instant.
+   - `APP_URL` — the production website URL, not `http://localhost:5173`.
+   - `SUPABASE_URL` and `SUPABASE_SECRET_KEY` — the same project the website uses.
+   - `DISCORD_ALERT_CHANNEL_ID` and `DISCORD_NEWS_CHANNEL_ID` — optional; `/alerts` and the `#news` lookup can set them later.
+4. **Apply**. The first image build takes a few minutes; later pushes to `main` deploy automatically.
+
+Without a Blueprint, choose **New → Web Service → Build and deploy from a Git repository**, set the language to **Docker**, leave the Dockerfile path at `./Dockerfile`, pick the **Free** instance type, and add the same variables under **Environment**.
+
+`render.yaml` sets the region to `frankfurt`; change it to `ohio`, `oregon` or `singapore` if the server is closer to one of those.
+
+#### 2. Check the deployment
+
+The log should show:
+
+```text
+[bot] Health server listening on 0.0.0.0:10000.
+[bot] Signed in as Anreu#0000 (1 servers).
+```
+
+`https://anreu.onrender.com/health` (use the URL Render shows) returns `{"ok":true,"ready":true,...}`.
+
+- `Login failed` — the token is wrong or was reset. Update `DISCORD_TOKEN` and redeploy.
+- The deploy fails its health check — the container is not serving Render's `PORT`. `bot/health.ts` prefers `PORT` and falls back to `BOT_HEALTH_PORT`, so a stale image is the usual cause; redeploy with **Clear build cache & deploy**.
+- `ready:false` while the log looks healthy — Discord has not finished the gateway handshake yet; it flips within seconds.
+
+#### 3. Move Discord back to the gateway
+
+Discord uses either the Interactions Endpoint URL or the gateway, never both. With `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` and (optionally) `DISCORD_GUILD_ID` in your local `.env`, run:
+
+```bash
+npm run bot:gateway
+```
+
+This clears the endpoint and registers the full gateway command set — 10 commands instead of the Worker's 7. Do not set the endpoint again while the Render bot runs, or Discord will stop delivering interactions over the gateway.
+
+#### 4. Keep it awake
+
+The free Cloudflare bot Worker can do the pinging. Add its secret once:
+
+```bash
+npx wrangler secret put RENDER_BOT_URL --config wrangler.bot.jsonc
+# paste https://anreu.onrender.com
+```
+
+`bot/worker-scheduler.ts` then pings `/health` on every five-minute Cron tick and skips its own alert, news and market posts, so nothing is announced twice. If you would rather not deploy the Worker, any free uptime monitor (cron-job.org, UptimeRobot, RenderPing) set to GET `/health` every 5–10 minutes does the same job.
+
+The Render bot writes the usual 20-second heartbeat, so `/discord` shows it as connected.
+
+#### If the ping stops
+
+The service sleeps after 15 idle minutes and wakes on the next request. While asleep the gateway is disconnected: new-application DMs are not received, join roles are missed until the next restart, and slash commands time out for about a minute while it cold-starts. Scheduled alerts, news and market posts are not lost — they stay queued in Supabase and post after the wake-up.
+
+#### Environment variables
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `DISCORD_TOKEN` | yes | Bot token from the Developer Portal. |
+| `DISCORD_CLIENT_ID` | yes | Application ID. |
+| `DISCORD_GUILD_ID` | recommended | Instant guild-scoped commands and the `#news` lookup. |
+| `APP_URL` | yes | Public website URL, used in Discord links. |
+| `SUPABASE_URL` | yes | Shared database with the web deployment. |
+| `SUPABASE_SECRET_KEY` | yes | Server-side key. Never expose it to the browser. |
+| `DISCORD_ALERT_CHANNEL_ID` | optional | Can also be set later with `/alerts`. |
+| `DISCORD_NEWS_CHANNEL_ID` | optional | Defaults to the bot's `#news` channel lookup. |
+| `MARKET_BACKEND` | optional | `supabase` is set by `render.yaml`. Free instances have an ephemeral disk, so SQLite is not usable there. |
+| `ALERT_*`, `NEWS_POLL_SECONDS`, `WIKI_MARKET_*` | optional | Polling and threshold tuning described in `.env.example`. |
+
+`DISCORD_PUBLIC_KEY` is not needed on Render; the gateway does not verify HTTP signatures. The bot also needs the **Server Members** intent enabled in the Developer Portal for join roles.
 
 ---
 
@@ -393,6 +475,7 @@ Miraheze is a free MediaWiki farm, so it is good at community editing, page hist
 | `DISCORD_PUBLIC_KEY` | — | Optional application public key; when omitted, the free interactions Worker fetches it with `DISCORD_TOKEN`. |
 | `DISCORD_GUILD_ID` | — | Optional guild for instant command registration. |
 | `DISCORD_ALERT_CHANNEL_ID` | — | Default alert channel; `/alerts` can override it in the database. |
+| `RENDER_BOT_URL` | — | Free Worker only: pings this Render URL on each Cron tick and leaves alerts, news and market posts to the gateway bot. |
 | `SUPABASE_URL` | — | Supabase project URL. |
 | `SUPABASE_PUBLISHABLE_KEY` | — | Public key (`sb_publishable_...`); safe for the browser. |
 | `SUPABASE_SECRET_KEY` | — | Server-only secret key (`sb_secret_...`); bypasses RLS. Never expose it. |
@@ -445,7 +528,7 @@ src/
 bot/
   worker.ts                free Cloudflare Worker entry: interactions + Cron
   worker-interactions.ts   slash commands, autocomplete, cancel button
-  worker-scheduler.ts      one Cron tick for alerts, news and market feed
+  worker-scheduler.ts      one Cron tick: keep-alive ping, or alerts, news and market feed
   worker-commands.ts       reduced command set supported by the free Worker
   discord-rest.ts          Discord REST client used by the Worker and watchers
   verify.ts                Discord Ed25519 request verification
@@ -463,11 +546,13 @@ bot/
 scripts/
   seed.ts / reset.ts       demo data and local database reset
   push-schema.ts           apply supabase/schema.sql via the Management API
+  discord-mode.ts          clear the interactions endpoint, register gateway commands
 supabase/
   schema.sql               Postgres tables, indexes, RLS and revision RPC
 data/
   market.db                created on first run (gitignored)
-Dockerfile                 optional always-on gateway bot image
+Dockerfile                 gateway bot image for Render, Docker or any always-on host
+render.yaml                free Render web service blueprint for the bot
 wrangler.jsonc             website Worker name, assets and compatibility settings
 wrangler.bot.jsonc         free bot Worker, secrets and Cron Trigger settings
 tsconfig.bot.json          gateway-safe TypeScript config for `bot:start`
@@ -541,6 +626,8 @@ The web app uses `@sveltejs/adapter-cloudflare` and deploys to Workers Static As
    To deploy both the website and the free Discord bot Worker in one command, run `npm run deploy:all`.
 
 4. Deploy the Discord bot Worker (see [Deploy the bot to Cloudflare Workers (free)](#deploy-the-bot-to-cloudflare-workers-free)). It uses the same `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `APP_URL`, but its secrets are stored on the separate `anreu` Worker. `DISCORD_PUBLIC_KEY` is optional there because the Worker can fetch it with `DISCORD_TOKEN`.
+
+   To run the full gateway bot instead, deploy it to [Render](#deploy-the-bot-to-render-free) and leave the bot Worker in place only as the keep-alive pinger (`RENDER_BOT_URL`). The website deployment does not change either way.
 
 To deploy the website with Workers Builds instead of the CLI, create a Worker named `settlers3`, set its build command to `npm run build` and its deploy command to `npx wrangler deploy`, then connect this repository on the `main` branch.
 

@@ -44,9 +44,24 @@
 			description: 'Point price alerts at a channel. Needs Manage Server.'
 		},
 		{
+			name: '/apply',
+			args: '—',
+			description: 'Apply to join — the bot asks five questions in your DMs.'
+		},
+		{
+			name: '/initapply',
+			args: '—',
+			description: 'Post or refresh the application instructions in #apply. Needs Manage Server.'
+		},
+		{
 			name: '/initrule',
 			args: 'channel',
 			description: 'Post or refresh the general community rules embed. Needs Manage Server.'
+		},
+		{
+			name: '/rolecitizen',
+			args: 'role, member',
+			description: 'Set the role approved applicants receive, and optionally grant it now. Needs Manage Server.'
 		}
 	];
 
@@ -201,7 +216,7 @@
 						</span>
 						<div>
 							<h2 class="text-sm font-semibold tracking-tight text-mist-100">Connect your own bot</h2>
-							<p class="text-[11px] text-mist-500">Five minutes on the free Cloudflare Worker</p>
+							<p class="text-[11px] text-mist-500">Free on Render, with the full command set</p>
 						</div>
 					</div>
 				</div>
@@ -210,10 +225,10 @@
 					<ol class="space-y-3">
 						{#each [
 							'Create an application at discord.com/developers/applications and add a Bot.',
-							'Copy the bot token, Application ID and Public Key into the anreu Worker secrets.',
-							'Set the Interactions Endpoint URL to https://anreu.<your-subdomain>.workers.dev/.',
-							'Copy an alert channel ID into DISCORD_ALERT_CHANNEL_ID — or run /alerts after deploying.',
-							'Run npm run bot:deploy, then npm run deploy:bot.'
+							'Deploy the bot to Render: New → Blueprint, then pick honsda/market-settlers-3.',
+							'Add DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID, SUPABASE_URL, SUPABASE_SECRET_KEY and APP_URL.',
+							'Run npm run bot:gateway to clear the Worker endpoint and register the full command set.',
+							'Keep the free service awake: set RENDER_BOT_URL on the bot Worker, or ping /health every 5–10 minutes.'
 						] as step, index (index)}
 							<li class="flex gap-3">
 								<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-bid/25 bg-bid/10 font-mono text-[10px] font-semibold text-bid">
@@ -226,17 +241,19 @@
 
 					<pre class="overflow-x-auto rounded-xl border border-white/[0.07] bg-ink-950/70 p-3.5 font-mono text-[10px] leading-relaxed text-mist-300"><code>DISCORD_TOKEN=your-bot-token
 DISCORD_CLIENT_ID=your-application-id
-DISCORD_PUBLIC_KEY=your-application-public-key
 DISCORD_GUILD_ID=optional-dev-server-id
 DISCORD_ALERT_CHANNEL_ID=channel-for-price-alerts
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SECRET_KEY=your-server-key
 APP_URL=https://your-site.example</code></pre>
 
 					<div class="flex items-start gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5">
 						<Icon name="info" size={14} class="mt-0.5 shrink-0 text-bid" />
 						<p class="text-[11px] leading-relaxed text-mist-400">
 							Set <code class="font-mono text-mist-200">DISCORD_GUILD_ID</code> while developing so slash commands
-							register instantly instead of taking up to an hour to appear globally. The free Worker serves
-							market commands and scheduled alerts; the DM application flow needs a gateway host.
+							register instantly instead of taking up to an hour to appear globally. Render hosts the full gateway
+							bot, including <code class="font-mono text-mist-200">/apply</code> and join roles; the free Cloudflare
+							Worker is the interactions-only fallback.
 						</p>
 					</div>
 				</div>

@@ -10,13 +10,15 @@ export interface BotHealth {
 }
 
 /**
- * Cloudflare Containers need a port to probe before they route traffic to the
- * image. The Discord gateway itself has no HTTP surface, so the bot exposes a
- * tiny read-only health endpoint when BOT_HEALTH_PORT is set.
+ * The Discord gateway itself has no HTTP surface, so the bot exposes a tiny
+ * read-only health endpoint for hosts that need a port to probe: Cloudflare
+ * Containers, Render, Docker, or any uptime monitor used to keep a free host
+ * awake. `PORT` wins because Render assigns it and routes traffic there;
+ * `BOT_HEALTH_PORT` is the fallback for plain Docker and containers.
  */
 export function startHealthServer(snapshot: () => BotHealth): void {
-	const port = Number(process.env.BOT_HEALTH_PORT ?? 0);
-	if (!port || server) return;
+	const port = Number(process.env.PORT ?? process.env.BOT_HEALTH_PORT ?? 0);
+	if (!Number.isFinite(port) || port <= 0 || server) return;
 
 	server = createServer((request, response) => {
 		const path = new URL(request.url ?? '/', 'http://localhost').pathname;

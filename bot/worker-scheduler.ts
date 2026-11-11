@@ -29,12 +29,25 @@ async function recordPresence(): Promise<void> {
 }
 
 /**
- * One Cron Trigger tick. The free Worker has no long-lived gateway process, so
- * each scheduled invocation polls the shared database once and posts anything
- * that is due. Keeping every task best-effort means a missing channel or a
- * temporary Discord error never blocks the others.
+ * One Cron Trigger tick.
+ *
+ * When `RENDER_BOT_URL` is set, the gateway bot on Render owns the scheduled
+ * posts, so this tick only pings that service. Render sleeps free web services
+ * after ~15 minutes without inbound traffic; a five-minute ping keeps the
+ * Discord gateway connected inside the 750 instance-hour budget. Without the
+ * variable the free Worker still polls and posts everything itself, exactly as
+ * before.
+ *
+ * Keeping every task best-effort means a missing channel or a temporary
+ * Discord error never blocks the others.
  */
 export async function runScheduled(): Promise<void> {
+	const keepAliveUrl = process.env.RENDER_BOT_URL?.trim();
+	if (keepAliveUrl) {
+		await pingRender(keepAliveUrl);
+		return;
+	}
+
 	await recordPresence().catch((error) => {
 		console.warn(
 			'[bot] Could not record Worker presence:',
@@ -52,5 +65,26 @@ export async function runScheduled(): Promise<void> {
 		if (result.status === 'rejected') {
 			console.error('[bot] Scheduled task failed:', result.reason);
 		}
+	}
+}
+
+async function pingRender(rawUrl: string): Promise<void> {
+	const url = `${rawUrl.replace(/\/+$/, '')}/health`;
+	try {
+		const response = await fetch(url, {
+			headers: {
+				'User-Agent': 'anreu-keepalive/1.0 (+https://github.com/honsda/market-settlers-3)'
+			}
+		});
+		// A cold start can take ~a minute; a timeout here is normal and the next
+		// tick retries. Only unexpected statuses are worth logging.
+		if (response.status >= 400) {
+			console.warn(`[bot] Keep-alive ping to ${url} returned ${response.status}.`);
+		}
+	} catch (error) {
+		console.warn(
+			`[bot] Keep-alive ping to ${url} failed:`,
+			error instanceof Error ? error.message : error
+		);
 	}
 }

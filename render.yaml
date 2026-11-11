@@ -1,0 +1,41 @@
+# Render Blueprint for the always-on Discord gateway bot.
+#
+# Apply it from Render → New → Blueprint, pointed at this repository. Values
+# marked `sync: false` are asked for in the dashboard and never stored in git.
+#
+# The free plan sleeps a web service after ~15 minutes without inbound traffic,
+# which drops the Discord gateway. Keep it awake with the free Cloudflare
+# Worker's five-minute Cron (set RENDER_BOT_URL there) or any uptime monitor.
+# See README → Deploy the bot to Render (free).
+services:
+  - type: web
+    name: anreu
+    runtime: docker
+    plan: free
+    # Move to `ohio`/`oregon`/`singapore` if the Discord server is elsewhere.
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MARKET_BACKEND
+        value: supabase
+      - key: APP_URL
+        sync: false
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: DISCORD_ALERT_CHANNEL_ID
+        sync: false
+      - key: DISCORD_NEWS_CHANNEL_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false

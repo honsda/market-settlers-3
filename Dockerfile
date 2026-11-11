@@ -1,12 +1,15 @@
 # Settlers III Discord bot
 #
-# Long-running gateway bot image for any always-on container host. The free
-# Cloudflare Worker deployment uses bot/worker.ts instead and does not need this
-# image. The bot needs a persistent gateway connection, so do not deploy it as a
-# serverless web service that sleeps.
+# Long-running gateway bot image for any always-on container host (Render,
+# Fly.io, a VPS, or Docker on your own machine). The free Cloudflare Worker
+# deployment uses bot/worker.ts instead and does not need this image.
+#
+# Render's free plan sleeps a web service after ~15 minutes without inbound
+# traffic, which drops the gateway connection. Keep it awake with a five-minute
+# ping; see README → Deploy the bot to Render (free).
 #
 #   docker build -t anreu .
-#   docker run --env-file .env anreu
+#   docker run -p 3000:3000 --env-file .env anreu
 
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
