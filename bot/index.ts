@@ -77,9 +77,9 @@ client.once(Events.ClientReady, async (readyClient) => {
 	});
 
 	startHeartbeat();
-	startAlertWatcher(client);
-	startNewsWatcher(client);
-	startWikiMarketWatcher(client);
+	startAlertWatcher();
+	startNewsWatcher();
+	startWikiMarketWatcher();
 
 	// Make sure the application role and review channel exist. With a pinned
 	// DISCORD_GUILD_ID only that server is touched, otherwise every guild.

@@ -1,42 +1,26 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "anreu",
-	"main": "bot/cloudflare.ts",
+	"main": "bot/worker.ts",
 	"compatibility_date": "2026-11-01",
 	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
 		"enabled": true
 	},
 	"triggers": {
-		// Wake the bot after a host restart and renew the container's idle timer.
+		// Alerts, news announcements, and the wiki market feed are polled here.
+		// Every five minutes keeps the free plan well inside request limits.
 		"crons": ["*/5 * * * *"]
 	},
-	"containers": [
-		{
-			"class_name": "BotContainer",
-			"image": "./Dockerfile",
-			"instance_type": "basic",
-			"max_instances": 1,
-			"observability": {
-				"enabled": true
-			}
-		}
-	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"name": "BOT_CONTAINER",
-				"class_name": "BotContainer"
-			}
-		]
-	},
-	"exports": {
-		"BotContainer": {
-			"type": "durable-object",
-			"storage": "sqlite"
-		}
-	},
 	"secrets": {
-		"required": ["DISCORD_TOKEN", "DISCORD_CLIENT_ID", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "APP_URL"]
+		// DISCORD_PUBLIC_KEY is optional: when it is absent the Worker fetches
+		// the application verify_key with DISCORD_TOKEN on first use.
+		"required": [
+			"DISCORD_TOKEN",
+			"DISCORD_CLIENT_ID",
+			"SUPABASE_URL",
+			"SUPABASE_SECRET_KEY",
+			"APP_URL"
+		]
 	}
 }

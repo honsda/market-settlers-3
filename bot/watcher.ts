@@ -1,10 +1,14 @@
-import { type Client, type TextChannel } from 'discord.js';
 import { getPendingAlerts, markAlertPosted } from '../src/lib/server/alerts';
 import { getItem } from '../src/lib/market';
 import { getMeta, setMeta } from '../src/lib/server/db';
 import { botConfig } from './config';
 import { alertEmbed } from './format';
-import { publishToFollowers } from './publish';
+import {
+	crosspostChannelMessage,
+	getChannel,
+	sendChannelMessage,
+	type DiscordChannel
+} from './discord-rest';
 
 let timer: NodeJS.Timeout | null = null;
 let stopped = true;
@@ -22,7 +26,7 @@ function notice(message: string): void {
 	console.warn(`[bot] ${message}`);
 }
 
-async function resolveChannel(client: Client): Promise<TextChannel | null> {
+async function resolveChannel(): Promise<DiscordChannel | null> {
 	const id = await alertChannelId();
 	if (!id) {
 		notice('No alert channel configured. Run /alerts in Discord or set DISCORD_ALERT_CHANNEL_ID.');
@@ -30,61 +34,73 @@ async function resolveChannel(client: Client): Promise<TextChannel | null> {
 	}
 
 	try {
-		const channel = await client.channels.fetch(id);
-		if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-			notice(`Channel ${id} is not a server text channel.`);
+		const channel = await getChannel(id);
+		if (channel.type !== 0 && channel.type !== 5) {
+			notice(`Channel ${id} is not a server text or announcement channel.`);
 			return null;
 		}
-		return channel as TextChannel;
+		return channel;
 	} catch (error) {
 		notice(`Could not fetch alert channel ${id}: ${error instanceof Error ? error.message : error}`);
 		return null;
 	}
 }
 
-async function tick(client: Client): Promise<void> {
+/** Post every pending market alert once. Safe to call from a Cron Trigger. */
+export async function runAlertsOnce(): Promise<void> {
+	const pending = await getPendingAlerts(10);
+	if (!pending.length) return;
+
+	const channel = await resolveChannel();
+	if (!channel) return;
+
+	for (const alert of pending) {
+		try {
+			const message = await sendChannelMessage(channel.id, {
+				embeds: [alertEmbed(alert, getItem(alert.itemId)).toJSON()]
+			});
+			if (channel.type === 5) {
+				await crosspostChannelMessage(channel.id, message.id).catch((error) => {
+					console.warn(
+						`[bot] Could not publish alert ${alert.id} to followers:`,
+						error instanceof Error ? error.message : error
+					);
+				});
+			}
+			await markAlertPosted(alert.id, message.id);
+		} catch (error) {
+			console.error(
+				`[bot] Failed to post alert ${alert.id}:`,
+				error instanceof Error ? error.message : error
+			);
+			// Leave it pending; the next tick retries.
+			break;
+		}
+	}
+
+	await setMeta('bot:last_alert_at', Date.now());
+}
+
+async function tick(): Promise<void> {
 	if (stopped) return;
 
 	try {
-		const pending = await getPendingAlerts(10);
-		if (pending.length) {
-			const channel = await resolveChannel(client);
-			if (channel) {
-				for (const alert of pending) {
-					if (stopped) return;
-					try {
-						const message = await channel.send({
-							embeds: [alertEmbed(alert, getItem(alert.itemId))]
-						});
-						await publishToFollowers(message);
-						await markAlertPosted(alert.id, message.id);
-					} catch (error) {
-						console.error(
-							`[bot] Failed to post alert ${alert.id}:`,
-							error instanceof Error ? error.message : error
-						);
-						// Leave it pending; the next tick retries.
-						break;
-					}
-				}
-				if (pending.length) await setMeta('bot:last_alert_at', Date.now());
-			}
-		}
+		await runAlertsOnce();
 	} catch (error) {
 		console.error('[bot] Alert watcher error:', error instanceof Error ? error.message : error);
 	} finally {
 		if (!stopped) {
-			timer = setTimeout(() => void tick(client), botConfig.pollSeconds * 1000);
+			timer = setTimeout(() => void tick(), botConfig.pollSeconds * 1000);
 			timer.unref?.();
 		}
 	}
 }
 
-export function startAlertWatcher(client: Client): void {
+export function startAlertWatcher(): void {
 	if (!stopped) return;
 	stopped = false;
-	// Give the client a moment to finish its ready handshake before the first poll.
-	timer = setTimeout(() => void tick(client), 2_500);
+	// Give the host a moment to finish booting before the first poll.
+	timer = setTimeout(() => void tick(), 2_500);
 	timer.unref?.();
 	console.log(`[bot] Alert watcher started (every ${botConfig.pollSeconds}s).`);
 }

@@ -58,16 +58,20 @@ function hasStaffPermission(permissions: Readonly<PermissionsBitField> | null): 
 	);
 }
 
-function rulesEmbed(guild: Guild): EmbedBuilder {
+export function rulesEmbedFor(guildName: string): EmbedBuilder {
 	return new EmbedBuilder()
 		.setColor(COLORS.ask)
-		.setAuthor({ name: `${guild.name} · Community` })
+		.setAuthor({ name: `${guildName} · Community` })
 		.setTitle('Community rules')
 		.setDescription(
-			`These rules apply everywhere in **${guild.name}** — text channels, voice rooms, and DMs with members. This is an **18+ community**; by staying here, you agree to follow these rules.\n\n**Use common sense.** Not every situation is listed, and staff have the final say.`
+			`These rules apply everywhere in **${guildName}** — text channels, voice rooms, and DMs with members. This is an **18+ community**; by staying here, you agree to follow these rules.\n\n**Use common sense.** Not every situation is listed, and staff have the final say.`
 		)
 		.addFields(...RULES)
 		.setFooter({ text: 'Settlers III · Community rules' });
+}
+
+function rulesEmbed(guild: Guild): EmbedBuilder {
+	return rulesEmbedFor(guild.name);
 }
 
 /** `/initrule` — post or refresh the rules embed in a text channel. */

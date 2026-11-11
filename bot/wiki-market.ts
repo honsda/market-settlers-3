@@ -1,4 +1,4 @@
-import { EmbedBuilder, type Client, type TextChannel } from 'discord.js';
+import { EmbedBuilder } from 'discord.js';
 import { getMeta, setMeta } from '../src/lib/server/db';
 import { serverEnv } from '../src/lib/server/env';
 import {
@@ -18,7 +18,12 @@ import {
 } from '../src/lib/wiki-market';
 import { formatPct, formatPrice, formatQty, timeAgo } from '../src/lib/format';
 import { COLORS, dashboardUrl, footer } from './format';
-import { publishToFollowers } from './publish';
+import {
+	crosspostChannelMessage,
+	getChannel,
+	sendChannelMessage,
+	type DiscordChannel
+} from './discord-rest';
 
 const DAY = 24 * 60 * 60 * 1000;
 const MOVE_LIMIT = 4;
@@ -27,6 +32,29 @@ let timer: NodeJS.Timeout | null = null;
 let stopped = true;
 let lastNotice = 0;
 const moveCooldowns = new Map<string, number>();
+const COOLDOWN_KEY = 'wiki:move_cooldowns';
+
+async function loadMoveCooldowns(): Promise<void> {
+	const raw = await getMeta(COOLDOWN_KEY);
+	if (!raw) return;
+	try {
+		const saved = JSON.parse(raw) as Record<string, number>;
+		moveCooldowns.clear();
+		for (const [key, value] of Object.entries(saved)) {
+			if (Number.isFinite(value)) moveCooldowns.set(key, value);
+		}
+	} catch {
+		// A malformed value should not stop market posts.
+	}
+}
+
+async function saveMoveCooldowns(): Promise<void> {
+	const cutoff = Date.now() - serverEnv.wikiMarketAlertCooldownMinutes * 60_000;
+	for (const [key, value] of moveCooldowns) {
+		if (value < cutoff) moveCooldowns.delete(key);
+	}
+	await setMeta(COOLDOWN_KEY, JSON.stringify(Object.fromEntries(moveCooldowns)));
+}
 
 interface Mover {
 	key: string;
@@ -109,7 +137,7 @@ async function alertChannelId(): Promise<string> {
 	return (await getMeta('bot:alert_channel_id')) || serverEnv.discordAlertChannelId;
 }
 
-async function resolveChannel(client: Client): Promise<TextChannel | null> {
+async function resolveChannel(): Promise<DiscordChannel | null> {
 	const id = await alertChannelId();
 	if (!id) {
 		notice('No market channel configured. Set DISCORD_ALERT_CHANNEL_ID or run /alerts in Discord.');
@@ -117,12 +145,12 @@ async function resolveChannel(client: Client): Promise<TextChannel | null> {
 	}
 
 	try {
-		const channel = await client.channels.fetch(id);
-		if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-			notice(`Channel ${id} is not a server text channel.`);
+		const channel = await getChannel(id);
+		if (channel.type !== 0 && channel.type !== 5) {
+			notice(`Channel ${id} is not a server text or announcement channel.`);
 			return null;
 		}
-		return channel as TextChannel;
+		return channel;
 	} catch (error) {
 		notice(`Could not fetch market channel ${id}: ${error instanceof Error ? error.message : error}`);
 		return null;
@@ -198,13 +226,9 @@ function findMovers(feed: WikiFeed, newTrades: WikiTrade[], lastTs: number): Mov
 		.slice(0, MOVE_LIMIT);
 }
 
-async function postMovers(
-	client: Client,
-	feed: WikiFeed,
-	movers: Mover[]
-): Promise<boolean> {
+async function postMovers(feed: WikiFeed, movers: Mover[]): Promise<boolean> {
 	if (!movers.length) return false;
-	const channel = await resolveChannel(client);
+	const channel = await resolveChannel();
 	if (!channel) return false;
 
 	const fields = movers.map((mover) => {
@@ -248,27 +272,27 @@ async function postMovers(
 		.setTimestamp(new Date());
 
 	try {
-		const message = await channel.send({ embeds: [footer(embed)] });
-		await publishToFollowers(message);
+		const message = await sendChannelMessage(channel.id, {
+			embeds: [footer(embed).toJSON()]
+		});
+		if (channel.type === 5) {
+			await crosspostChannelMessage(channel.id, message.id).catch(() => undefined);
+		}
 		const now = Date.now();
 		for (const mover of movers) moveCooldowns.set(mover.key, now);
-		console.log(`[bot] Posted ${movers.length} market move(s) to #${channel.name}.`);
+		console.log(`[bot] Posted ${movers.length} market move(s) to #${channel.name ?? channel.id}.`);
 		return true;
 	} catch (error) {
 		console.error(
-			`[bot] Could not post market moves to #${channel.name}:`,
+			`[bot] Could not post market moves to #${channel.name ?? channel.id}:`,
 			error instanceof Error ? error.message : error
 		);
 		return false;
 	}
 }
 
-async function postSummary(
-	client: Client,
-	feed: WikiFeed,
-	trades: WikiTrade[]
-): Promise<boolean> {
-	const channel = await resolveChannel(client);
+async function postSummary(feed: WikiFeed, trades: WikiTrade[]): Promise<boolean> {
+	const channel = await resolveChannel();
 	if (!channel) return false;
 
 	const groups = new Map<
@@ -347,26 +371,28 @@ async function postSummary(
 		.setTimestamp(new Date());
 
 	try {
-		const message = await channel.send({ embeds: [footer(embed)] });
-		await publishToFollowers(message);
-		console.log(`[bot] Posted market pulse to #${channel.name} (${trades.length} trades).`);
+		const message = await sendChannelMessage(channel.id, {
+			embeds: [footer(embed).toJSON()]
+		});
+		if (channel.type === 5) {
+			await crosspostChannelMessage(channel.id, message.id).catch(() => undefined);
+		}
+		console.log(
+			`[bot] Posted market pulse to #${channel.name ?? channel.id} (${trades.length} trades).`
+		);
 		return true;
 	} catch (error) {
 		console.error(
-			`[bot] Could not post market pulse to #${channel.name}:`,
+			`[bot] Could not post market pulse to #${channel.name ?? channel.id}:`,
 			error instanceof Error ? error.message : error
 		);
 		return false;
 	}
 }
 
-async function postSpreadBoard(
-	client: Client,
-	feed: WikiFeed,
-	items: WikiSpreadItem[]
-): Promise<boolean> {
+async function postSpreadBoard(feed: WikiFeed, items: WikiSpreadItem[]): Promise<boolean> {
 	if (!items.length) return false;
-	const channel = await resolveChannel(client);
+	const channel = await resolveChannel();
 	if (!channel) return false;
 
 	const fields = items.map((item, index) => {
@@ -401,20 +427,26 @@ async function postSpreadBoard(
 		.setTimestamp(new Date());
 
 	try {
-		const message = await channel.send({ embeds: [footer(embed)] });
-		await publishToFollowers(message);
-		console.log(`[bot] Posted ${items.length} profitable spreads to #${channel.name}.`);
+		const message = await sendChannelMessage(channel.id, {
+			embeds: [footer(embed).toJSON()]
+		});
+		if (channel.type === 5) {
+			await crosspostChannelMessage(channel.id, message.id).catch(() => undefined);
+		}
+		console.log(
+			`[bot] Posted ${items.length} profitable spreads to #${channel.name ?? channel.id}.`
+		);
 		return true;
 	} catch (error) {
 		console.error(
-			`[bot] Could not post the profit board to #${channel.name}:`,
+			`[bot] Could not post the profit board to #${channel.name ?? channel.id}:`,
 			error instanceof Error ? error.message : error
 		);
 		return false;
 	}
 }
 
-async function maybePostSpreadBoard(client: Client, feed: WikiFeed): Promise<void> {
+async function maybePostSpreadBoard(feed: WikiFeed): Promise<void> {
 	const lastRaw = await getMeta('wiki:last_profit_at');
 	const last = Number(lastRaw ?? 0) || 0;
 	const interval = serverEnv.wikiMarketProfitMinutes * 60_000;
@@ -426,15 +458,14 @@ async function maybePostSpreadBoard(client: Client, feed: WikiFeed): Promise<voi
 		await setMeta('wiki:last_profit_at', Date.now());
 		return;
 	}
-	if (await postSpreadBoard(client, feed, items)) {
+	if (await postSpreadBoard(feed, items)) {
 		await setMeta('wiki:last_profit_at', Date.now());
 	}
 }
 
-async function tick(client: Client): Promise<void> {
-	if (stopped) return;
-
+async function runOnce(): Promise<void> {
 	try {
+		await loadMoveCooldowns();
 		const feed = await fetchWikiMarketFeed(true);
 		const lastTsRaw = await getMeta('wiki:last_trade_ts');
 		const lastTs = Number(lastTsRaw ?? 0) || 0;
@@ -450,14 +481,14 @@ async function tick(client: Client): Promise<void> {
 			console.log(
 				`[bot] Market feed ready: ${feed.shops.length} shops, ${feed.trades.length} trades; starting from ${new Date(maxTs).toISOString()}.`
 			);
-			await maybePostSpreadBoard(client, feed);
+			await maybePostSpreadBoard(feed);
 			return;
 		}
 
 		const newTrades = feed.trades.filter((trade) => trade.ts > lastTs);
 		await setMeta('wiki:last_feed_generated', feed.generated);
 		await setMeta('wiki:last_poll_at', Date.now());
-		await maybePostSpreadBoard(client, feed);
+		await maybePostSpreadBoard(feed);
 
 		if (!newTrades.length) return;
 
@@ -467,24 +498,33 @@ async function tick(client: Client): Promise<void> {
 			Date.now() - lastSummary >= serverEnv.wikiMarketSummaryMinutes * 60_000;
 
 		const movers = findMovers(feed, newTrades, lastTs);
-		await postMovers(client, feed, movers);
+		if (await postMovers(feed, movers)) await saveMoveCooldowns();
 
-		if (summaryDue && (await postSummary(client, feed, newTrades))) {
+		if (summaryDue && (await postSummary(feed, newTrades))) {
 			await setMeta('wiki:last_summary_at', Date.now());
 		}
 
 		await setMeta('wiki:last_trade_ts', Math.max(...newTrades.map((trade) => trade.ts)));
 	} catch (error) {
 		notice(`Market feed watcher error: ${error instanceof Error ? error.message : error}`);
-	} finally {
-		if (!stopped) {
-			timer = setTimeout(() => void tick(client), serverEnv.wikiMarketPollSeconds * 1000);
-			timer.unref?.();
-		}
 	}
 }
 
-export function startWikiMarketWatcher(client: Client): void {
+/** Run one market-feed poll. Safe to call from a Cron Trigger. */
+export async function runWikiMarketOnce(): Promise<void> {
+	await runOnce();
+}
+
+async function tick(): Promise<void> {
+	if (stopped) return;
+	await runOnce();
+	if (!stopped) {
+		timer = setTimeout(() => void tick(), serverEnv.wikiMarketPollSeconds * 1000);
+		timer.unref?.();
+	}
+}
+
+export function startWikiMarketWatcher(): void {
 	if (!stopped) return;
 	stopped = false;
 	console.log(
@@ -492,7 +532,7 @@ export function startWikiMarketWatcher(client: Client): void {
 			`pulse ${serverEnv.wikiMarketSummaryMinutes}m, spreads ${serverEnv.wikiMarketProfitMinutes}m, ` +
 			`moves >${serverEnv.wikiMarketAlertThresholdPct}%).`
 	);
-	timer = setTimeout(() => void tick(client), 3_000);
+	timer = setTimeout(() => void tick(), 3_000);
 	timer.unref?.();
 }
 

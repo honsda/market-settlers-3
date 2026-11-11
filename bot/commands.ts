@@ -202,7 +202,7 @@ export const commandData = [
 		)
 ];
 
-function resolveItemId(raw: string): string {
+export function resolveItemId(raw: string): string {
 	const item = getItem(raw.trim());
 	if (item) return item.id;
 	const match = searchItems(raw).length === 1 ? searchItems(raw)[0] : undefined;
@@ -218,7 +218,7 @@ function itemTitle(entry: ItemMarket): string {
 	return getItem(entry.itemId)?.name ?? entry.itemId;
 }
 
-function priceEmbed(entry: ItemMarket): EmbedBuilder {
+export function priceEmbed(entry: ItemMarket): EmbedBuilder {
 	const item = getItem(entry.itemId);
 	const name = item?.name ?? entry.itemId;
 	const history = entry.history.filter((point) => point.mid !== null);
@@ -281,7 +281,7 @@ function priceEmbed(entry: ItemMarket): EmbedBuilder {
 	return footer(embed);
 }
 
-function marketEmbed(response: MarketResponse, sort: string): EmbedBuilder {
+export function marketEmbed(response: MarketResponse, sort: string): EmbedBuilder {
 	const live = response.items.filter((entry) => entry.bidCount + entry.askCount > 0);
 	const ranked = [...live];
 	if (sort === 'movers') {
@@ -333,7 +333,7 @@ function marketEmbed(response: MarketResponse, sort: string): EmbedBuilder {
 	return embed;
 }
 
-function offersEmbed(offers: Offer[], filterLabel: string): EmbedBuilder {
+export function offersEmbed(offers: Offer[], filterLabel: string): EmbedBuilder {
 	const lines = offers.slice(0, 10).map((offer) => {
 		const item = getItem(offer.itemId);
 		const name = item?.name ?? offer.itemId;
@@ -357,7 +357,7 @@ function offersEmbed(offers: Offer[], filterLabel: string): EmbedBuilder {
 	return embed;
 }
 
-function playerEmbed(summary: PlayerSummary): EmbedBuilder {
+export function playerEmbed(summary: PlayerSummary): EmbedBuilder {
 	const embed = new EmbedBuilder()
 		.setColor(COLORS.neutral)
 		.setAuthor({ name: `Trader · ${summary.ign}` })

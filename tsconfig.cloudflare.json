@@ -9,5 +9,5 @@
 		"noEmit": true,
 		"types": ["@cloudflare/workers-types"]
 	},
-	"include": ["bot/cloudflare.ts"]
+	"include": ["bot/cloudflare.ts", "bot/worker.ts", "bot/verify.ts"]
 }

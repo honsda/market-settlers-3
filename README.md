@@ -49,6 +49,8 @@ npm run dev:all
 
 ## Discord bot setup
 
+> **Free deployment:** the Cloudflare Worker path is documented under [Deploy the bot to Cloudflare Workers (free)](#deploy-the-bot-to-cloudflare-workers-free). The steps below describe the optional gateway bot for local development or an always-on host. The free Worker supports the market commands, `/alerts` and `/initrule`; the application and role features require the gateway.
+
 1. Create an application at <https://discord.com/developers/applications> and add a **Bot**.
 2. Copy the token and Application ID into `.env`:
 
@@ -62,7 +64,7 @@ npm run dev:all
 
 3. Invite the bot with the `bot` and `applications.commands` scopes. Grant **View Channels**, **Send Messages**, **Embed Links**, **Read Message History**, **Manage Messages**, **Manage Roles** and **Manage Channels**. Manage Messages keeps `#apply` clean, lets the guides be pinned, and publishes market posts to announcement-channel followers; the last two let it create the Dweller role and the admin-only `#staff-verify` channel; `/alerts`, `/initapply`, `/initrule` and `/rolecitizen` additionally check for **Manage Server** on the person running them.
 4. Under **Bot → Privileged Gateway Intents**, enable **Server Members** (needed for join roles and member lookups). Message Content is not needed — DMs sent to the bot are exempt, and the `#apply` cleanup never reads message text.
-5. Run `npm run bot:deploy` once (or just `npm run bot` — it registers commands on startup).
+5. Run `npm run bot:deploy:gateway` once (or just `npm run bot` — it registers commands on startup).
 6. Start it with `npm run bot` or `npm run dev:all`.
 
 ### Slash commands
@@ -75,14 +77,14 @@ npm run dev:all
 | `/player ign:<name>` | Guild, open offers, locked value and last activity for a trader. |
 | `/post side item quantity price ign [guild] [contact] [note] [x] [y] [z]` | Publish an offer straight from Discord. The reply is ephemeral and includes a **Cancel this offer** button. |
 | `/alerts channel:<#channel>` | Point market posts at a text or announcement channel. Announcement-channel posts are published to its followers. Requires **Manage Server**. |
-| `/apply` | Starts a membership application. Only works in a channel named **#apply**; the five questions are asked in DMs. |
-| `/initapply` | Posts or refreshes the application guide embed in **#apply** and pins it. Requires **Manage Server**. |
+| `/apply` | **Gateway only.** Starts a membership application. Only works in a channel named **#apply**; the five questions are asked in DMs. |
+| `/initapply` | **Gateway only.** Posts or refreshes the application guide embed in **#apply** and pins it. Requires **Manage Server**. |
 | `/initrule [channel]` | Posts or refreshes a pinned general community rules embed. Defaults to the current text channel. Requires **Manage Server**. |
-| `/rolecitizen [role] [member]` | Choose the role approved applicants receive (creates **Citizen** when omitted) and optionally give it to someone now. Requires **Manage Server**. |
+| `/rolecitizen [role] [member]` | **Gateway only.** Choose the role approved applicants receive (creates **Citizen** when omitted) and optionally give it to someone now. Requires **Manage Server**. |
 
-Item options use Discord autocomplete backed by the shared catalogue in `src/lib/market.ts`.
+Item options use Discord autocomplete backed by the shared catalogue in `src/lib/market.ts`. `npm run bot:deploy` registers only the free Worker set; use `npm run bot:deploy:gateway` before starting the gateway bot.
 
-### Applications and roles
+### Applications and roles (gateway only)
 
 1. A staff member runs `/initapply` in **#apply** to post (or refresh) the guide embed. The bot pins it and deletes other messages posted in the channel, so the guide stays easy to find. `/apply` is refused outside **#apply**, and each member can have only one pending form per server.
 2. The bot sends five questions in DMs: **IGN** (3–16 letters, numbers or underscores), **age** (18+; younger applicants are stopped), **timezone and usual play times**, **why they want to join**, and **what they want to do or contribute**. Typing `cancel` stops the flow; unfinished conversations expire after an hour.
@@ -100,7 +102,7 @@ Rules are general Discord community rules (not in-game rules) and are stored per
 
 ### How alerts work
 
-Every offer mutation snapshots the item's best bid/ask into `price_history`. When a price moves more than `ALERT_THRESHOLD_PCT` (default **8%**), or sets a new 7-day high/low, a row is written to the `alerts` table. The bot polls that queue every `ALERT_POLL_SECONDS` (default 20s) and posts an embed to the configured channel. Alerts are marked as posted only after Discord accepts them, so nothing is lost if the bot is briefly offline.
+Every offer mutation snapshots the item's best bid/ask into `price_history`. When a price moves more than `ALERT_THRESHOLD_PCT` (default **8%**), or sets a new 7-day high/low, a row is written to the `alerts` table. The bot polls that queue every `ALERT_POLL_SECONDS` (default 20s) when it runs as a gateway host; the free Cloudflare Worker checks the queue from its five-minute Cron Trigger. Alerts are marked as posted only after Discord accepts them, so nothing is lost if the bot is briefly offline.
 
 Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default 45) to keep the feed readable.
 
@@ -108,99 +110,129 @@ Alerts are suppressed per item + direction for `ALERT_COOLDOWN_MINUTES` (default
 
 When a moderator publishes an article, the bot posts an embed in **#news** with the title, summary, section, author, reading time, cover image and a link to the full dispatch. The public URL comes from `APP_URL`.
 
-The bot checks `news_articles` every `NEWS_POLL_SECONDS` (default **20s**) for published rows that have not been announced yet. It sets `announced_at` only after Discord accepts the message, so an outage does not lose articles. On the feature's first start, articles already published before that moment are marked as announced; anything published afterwards is posted.
+The bot checks `news_articles` every `NEWS_POLL_SECONDS` (default **20s**) on a gateway host, or on the free Worker's five-minute Cron Trigger, for published rows that have not been announced yet. It sets `announced_at` only after Discord accepts the message, so an outage does not lose articles. On the feature's first start, articles already published before that moment are marked as announced; anything published afterwards is posted.
 
 Set `DISCORD_NEWS_CHANNEL_ID` to point at a specific channel. If it is empty, the bot looks for a channel named **#news** in `DISCORD_GUILD_ID` (or in any server it has joined). The resolved ID is remembered in `meta` under `bot:news_channel_id`.
 
-### Deploy the bot to Cloudflare Containers
+### Deploy the bot to Cloudflare Workers (free)
 
-The bot is a long-running Discord gateway process: it holds a WebSocket open, so it cannot run as a normal Cloudflare Worker. It runs in a **Cloudflare Container** instead. The Worker in `wrangler.bot.jsonc` manages the container lifecycle, a Cron Trigger wakes it every five minutes, and the image is built from the repo's `Dockerfile`.
+The free deployment is an **HTTP interactions Worker**, not a gateway bot. Discord sends signed requests for slash commands, and a Cron Trigger polls the database for scheduled posts. It fits the Workers Free plan and does not need Docker, a container, or a paid plan.
 
-Cloudflare Containers require a **Workers Paid** plan. A `basic` container (1 GiB RAM) is enough for this bot; it runs continuously while the gateway connection is open. See [Containers pricing](https://developers.cloudflare.com/containers/platform/pricing/).
+Supported in the free Worker:
 
-You can deploy with **Workers Builds** (no local Docker required) or from your machine with Docker.
+- Slash commands: `/price`, `/market`, `/offers`, `/player`, `/post`, `/alerts`, `/initrule`
+- Price alerts, news announcements, and wiki market posts on a five-minute Cron Trigger
+- The cancel button on `/post` offers
 
-#### Option A: Workers Builds (no Docker)
+Not available in the free Worker:
 
-1. Use the existing `anreu` Worker, or create one named `anreu`: **Workers & Pages → Create application → Hello World**. The name must match `name` in `wrangler.bot.jsonc`.
-2. Open the Worker → **Settings → Variables and Secrets** and add the required runtime secrets from the table below: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `APP_URL`. These must be runtime secrets, not Build variables.
-3. Go to **Settings → Builds → Connect** and select:
-   - Repository: `honsda/market-settlers-3`
-   - Branch: `main`
-   - Root directory: `/` (repository root)
-   - Build command: leave empty, because Workers Builds installs dependencies automatically. Use `npm ci` if the UI requires one.
-   - Deploy command: `npm run deploy:bot`
-   - Turn off preview/non-production builds. Containers only update through a full `wrangler deploy`, not `wrangler versions upload`.
-4. Push a commit to `main` (or click **Deploy** / **Retry build**). The first build takes several minutes while Cloudflare builds and provisions the container image.
-5. Open `https://anreu.<your-subdomain>.workers.dev/health`. `ready` becomes `true` once Discord connects.
+- `/apply`, `/initapply`, and `/rolecitizen`
+- The DM application flow, member-join roles, message-based channel cleanup, and presence
+- Gateway events such as `messageCreate` and `guildMemberAdd`
 
-#### Option B: Deploy from your machine (Docker)
+If you need those later, run the gateway bot on an always-on host with `npm run bot:start`; the `Dockerfile` and `bot/index.ts` still support that path.
 
-You need Docker running locally for this path.
+#### 1. Create the Worker and secrets
 
-1. Log in and create the bot Worker's secrets. These are separate from the website Worker's secrets:
+Use the existing `anreu` Worker, or create one named `anreu`. The name must match `name` in `wrangler.bot.jsonc`. These secrets are separate from the website Worker's secrets.
 
-   ```bash
-   npx wrangler login
-   npx wrangler secret put DISCORD_TOKEN --config wrangler.bot.jsonc
-   npx wrangler secret put DISCORD_CLIENT_ID --config wrangler.bot.jsonc
-   npx wrangler secret put SUPABASE_URL --config wrangler.bot.jsonc
-   npx wrangler secret put SUPABASE_SECRET_KEY --config wrangler.bot.jsonc
-   npx wrangler secret put APP_URL --config wrangler.bot.jsonc
-   ```
+```bash
+npx wrangler login
+npx wrangler secret put DISCORD_TOKEN --config wrangler.bot.jsonc
+npx wrangler secret put DISCORD_CLIENT_ID --config wrangler.bot.jsonc
+npx wrangler secret put SUPABASE_URL --config wrangler.bot.jsonc
+npx wrangler secret put SUPABASE_SECRET_KEY --config wrangler.bot.jsonc
+npx wrangler secret put APP_URL --config wrangler.bot.jsonc
+```
 
-   Add the optional values from the table below the same way. Wrangler offers to create the Worker when you add the first secret.
+`APP_URL` must be the production website URL, not `http://localhost:5173`.
 
-2. Deploy the container image:
+`DISCORD_PUBLIC_KEY` is optional. When it is absent, the Worker asks Discord for the application's `verify_key` using `DISCORD_TOKEN` on the first interaction and caches it. To pin the key instead, copy **General Information → Public Key** from the Developer Portal and add it as a secret:
 
-   ```bash
-   npm run deploy:bot
-   ```
+```bash
+npx wrangler secret put DISCORD_PUBLIC_KEY --config wrangler.bot.jsonc
+```
 
-   This runs `wrangler deploy --config wrangler.bot.jsonc`. The first deploy builds and uploads the image. The Cron Trigger (or a request to `/health`) starts the container, and later deploys roll out a fresh image.
+Add the optional values from the table below the same way, as **secrets**. `wrangler.bot.jsonc` intentionally has no plain `vars` block, so dashboard plain variables can be removed on deploy.
 
-3. Open `https://anreu.<your-subdomain>.workers.dev/health`. The response includes `ready`, the bot tag, guild count and uptime. The health route starts the container if it is not already running.
+#### 2. Deploy
 
-The bot registers its slash commands on boot. If you only changed command definitions and do not want to rebuild the container, run `npm run bot:deploy` locally against the same Discord application.
+```bash
+npm run deploy:bot
+```
+
+Or connect **Workers Builds**:
+
+- Repository: `honsda/market-settlers-3`
+- Branch: `main`
+- Root directory: `/`
+- Build command: `npm ci` (Workers Builds also installs dependencies automatically)
+- Deploy command: `npm run deploy:bot`
+- Turn off preview/non-production builds
+
+`wrangler.bot.jsonc` sets a `*/5 * * * *` Cron Trigger and the Worker's `scheduled` handler runs alerts, news, and the market feed.
+
+#### 3. Point Discord at the Worker
+
+Set **General Information → Interactions Endpoint URL** to:
+
+```text
+https://anreu.<your-subdomain>.workers.dev/
+```
+
+Discord sends a signed `PING` immediately. The Worker verifies it with `DISCORD_PUBLIC_KEY`, or with the key it fetches from Discord using `DISCORD_TOKEN`, and replies with `{ "type": 1 }`. If Discord says the endpoint could not be verified, check that the URL ends at `/` (not `/health`) and that `DISCORD_TOKEN` is valid; if you pinned `DISCORD_PUBLIC_KEY`, check that value too.
+
+#### 4. Register the reduced command set
+
+Run this locally with `.env` or `.env.local` containing `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, and optionally `DISCORD_GUILD_ID`:
+
+```bash
+npm run bot:deploy
+```
+
+This replaces the application's commands with the free Worker set. To register the full gateway command set instead, use:
+
+```bash
+npm run bot:deploy:gateway
+```
+
+#### 5. Verify
+
+- `https://anreu.<your-subdomain>.workers.dev/health` returns `{ "ok": true, ... }`.
+- Discord's endpoint check succeeds.
+- Run `/price` in the server; it should answer without a gateway connection.
+- Cron logs appear under **Workers & Pages → `anreu` → Logs**.
 
 If a Workers Builds deploy fails:
 
 - **Worker name mismatch** — the Worker in the dashboard must be named exactly `anreu`.
-- **Required secrets missing** — add them under **Settings → Variables and Secrets**, not under Build variables. Build variables are only available during the build.
-- **`/health` returns 404 or 502 on the first deploy** — wait several minutes for the container image to finish provisioning, then retry. Check **Logs** for the bot process.
-
-#### How the container stays online
-
-- `wrangler.bot.jsonc` sets `sleepAfter = "24h"` and a `*/5 * * * *` Cron Trigger. The cron calls `ensureRunning()`, which starts a stopped container or renews the idle timer of a running one.
-- If Cloudflare restarts or moves the container, the process reconnects to Discord on boot. The cron brings it back within five minutes.
-- `bot/health.ts` exposes `GET /health` on port 3000 only when `BOT_HEALTH_PORT` is set. Cloudflare uses it as the container readiness probe.
-- Container logs appear in the Cloudflare dashboard under **Workers & Pages → `anreu` → Logs**; live tailing is available there.
-
-To run the bot Worker and its container locally (Docker required):
-
-```bash
-npm run bot:cloudflare:dev
-```
-
-For local development without Docker, keep using `npm run bot` (or `npm run dev:all`); it runs the same `bot/index.ts` directly.
+- **Required secrets missing** — add them under **Settings → Variables and Secrets**, not Build variables. Build variables are only available during the build.
+- **Endpoint verification fails** — the URL points at `/health` instead of `/`, `DISCORD_TOKEN` is invalid, or a pinned `DISCORD_PUBLIC_KEY` is wrong.
 
 #### Environment variables
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `DISCORD_TOKEN` | yes | Bot token from the Developer Portal. |
-| `DISCORD_CLIENT_ID` | yes | Application ID, used for command registration and the invite link. |
-| `DISCORD_GUILD_ID` | recommended | Makes new slash commands appear instantly. |
+| `DISCORD_TOKEN` | yes | Bot token from the Developer Portal. Used for REST calls and command registration. |
+| `DISCORD_CLIENT_ID` | yes | Application ID. |
+| `DISCORD_PUBLIC_KEY` | optional | Verifies interaction requests. If omitted, the Worker fetches the application `verify_key` with `DISCORD_TOKEN`. |
+| `DISCORD_GUILD_ID` | recommended | Makes new slash commands appear instantly; also used for **#news** lookup. |
 | `APP_URL` | yes | Public website URL, used in Discord links. |
 | `SUPABASE_URL` | yes | Shared database with the web deployment. |
 | `SUPABASE_SECRET_KEY` | yes | Server-side key; never expose it to the browser. |
 | `DISCORD_ALERT_CHANNEL_ID` | optional | Can also be set later with `/alerts`. |
 | `DISCORD_NEWS_CHANNEL_ID` | optional | Defaults to the bot's **#news** channel lookup. |
-| `ALERT_*`, `NEWS_POLL_SECONDS`, `WIKI_MARKET_*` | optional | Tuning values described in `.env.example`. |
+| `ALERT_*`, `NEWS_POLL_SECONDS`, `WIKI_MARKET_*` | optional | Gateway-host tuning values described in `.env.example`. The free Worker polls on the Cron schedule instead. |
 
-The container forces `MARKET_BACKEND=supabase`. Do **not** switch it to SQLite: the container filesystem is ephemeral and the website Worker cannot read it. With Supabase configured the bot is stateless and restarts safely.
+The Worker must use Supabase. With `SUPABASE_URL` and `SUPABASE_SECRET_KEY` set, the shared backend selects Supabase automatically; SQLite only works for local development.
 
-The bot image uses Node.js 24 and runs `npm run bot:start` (`tsx --tsconfig tsconfig.bot.json bot/index.ts`). `tsx` is a runtime dependency, so `npm ci --omit=dev` is enough.
+To run the free Worker locally:
+
+```bash
+npm run bot:cloudflare:dev
+```
+
+Wrangler reads local values from `.dev.vars` (not `.env`). Copy the required keys there before testing. For the full gateway bot without Cloudflare, use `npm run bot` or `npm run dev:all`.
 
 ---
 
@@ -214,7 +246,7 @@ https://wiki.settlers-mc.org/data/market.json
 
 The server writes that file about every 60 seconds. All prices in it are **gold nuggets**; bundle offers (for example `8 wheat for 2 nuggets`) are normalized to a per-item price before display.
 
-The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) and:
+The bot polls the feed every `WIKI_MARKET_POLL_SECONDS` (default **60s**) on a gateway host; the free Worker polls it from the five-minute Cron Trigger. It:
 
 - posts a batched **market pulse** to the configured market channel every `WIKI_MARKET_SUMMARY_MINUTES` (default **30m**) when new trades have happened;
 - posts an hourly **profitable spread board** with up to ten positive shop/market spreads, showing the shop prices, 24h market average, last trade, volume and the margin per item and per 64-stack (`WIKI_MARKET_PROFIT_MINUTES`, default **60m**);
@@ -325,13 +357,14 @@ Miraheze is a free MediaWiki farm, so it is good at community editing, page hist
 | `npm run build` | Production build for Cloudflare Workers (`.svelte-kit/cloudflare`). |
 | `npm run preview` | Build and preview the Worker locally with `wrangler dev`. |
 | `npm run deploy` | Build and deploy the website to Cloudflare Workers. |
-| `npm run deploy:bot` | Build and deploy the Discord bot to Cloudflare Containers. |
-| `npm run deploy:all` | Deploy the website and the bot. |
-| `npm run bot:cloudflare:dev` | Run the bot Worker and container locally (Docker required). |
+| `npm run deploy:bot` | Deploy the free Discord bot Worker to Cloudflare. |
+| `npm run deploy:all` | Deploy the website and the bot Worker. |
+| `npm run bot:cloudflare:dev` | Run the bot Worker locally with `wrangler dev`. |
 | `npm run check` | Svelte + TypeScript diagnostics. |
-| `npm run bot` | Discord bot in watch mode. |
-| `npm run bot:start` | Discord bot without watch mode. |
-| `npm run bot:deploy` | Register slash commands without starting the bot. |
+| `npm run bot` | Discord gateway bot in watch mode (local/always-on host). |
+| `npm run bot:start` | Discord gateway bot without watch mode. |
+| `npm run bot:deploy` | Register the free Worker slash-command set. |
+| `npm run bot:deploy:gateway` | Register the full gateway slash-command set. |
 | `npm run dev:all` | Website + bot together. |
 | `npm run db:seed` | Add demo offers, history and alerts. |
 | `npm run db:reset` | Delete the local database and reseed it. |
@@ -357,6 +390,7 @@ Miraheze is a free MediaWiki farm, so it is good at community editing, page hist
 | `WIKI_MARKET_ALERT_COOLDOWN_MINUTES` | `60` | Per-item market-move cooldown. |
 | `DISCORD_TOKEN` | — | Bot token. |
 | `DISCORD_CLIENT_ID` | — | Application ID (used for registration and the invite URL). |
+| `DISCORD_PUBLIC_KEY` | — | Optional application public key; when omitted, the free interactions Worker fetches it with `DISCORD_TOKEN`. |
 | `DISCORD_GUILD_ID` | — | Optional guild for instant command registration. |
 | `DISCORD_ALERT_CHANNEL_ID` | — | Default alert channel; `/alerts` can override it in the database. |
 | `SUPABASE_URL` | — | Supabase project URL. |
@@ -409,10 +443,14 @@ src/
     discord/              bot status, commands and alert feed
     api/                  offers, market, history, alerts, server, guilds, stream, news
 bot/
-  cloudflare.ts            Cloudflare Worker and container class for the bot
-  health.ts                HTTP readiness endpoint used by Cloudflare Containers
-  index.ts                 Discord client, heartbeat, interactions
-  commands.ts              slash commands, autocomplete, cancel button
+  worker.ts                free Cloudflare Worker entry: interactions + Cron
+  worker-interactions.ts   slash commands, autocomplete, cancel button
+  worker-scheduler.ts      one Cron tick for alerts, news and market feed
+  worker-commands.ts       reduced command set supported by the free Worker
+  discord-rest.ts          Discord REST client used by the Worker and watchers
+  verify.ts                Discord Ed25519 request verification
+  index.ts                 gateway client, heartbeat, interactions (always-on host)
+  commands.ts              full slash commands, autocomplete, cancel button
   applications.ts          /apply DM flow, /initapply guide, #apply cleanup, review
   rules.ts                 /initrule general community rules embed
   watcher.ts               queued alert delivery
@@ -420,6 +458,8 @@ bot/
   register.ts              REST command registration
   deploy-commands.ts       standalone registration entrypoint
   format.ts                Discord embeds
+  health.ts                HTTP readiness endpoint for the gateway host
+  cloudflare.ts            optional paid Cloudflare Containers adapter (unused by the free Worker)
 scripts/
   seed.ts / reset.ts       demo data and local database reset
   push-schema.ts           apply supabase/schema.sql via the Management API
@@ -427,10 +467,10 @@ supabase/
   schema.sql               Postgres tables, indexes, RLS and revision RPC
 data/
   market.db                created on first run (gitignored)
-Dockerfile                 Cloudflare Containers image for the Discord bot
+Dockerfile                 optional always-on gateway bot image
 wrangler.jsonc             website Worker name, assets and compatibility settings
-wrangler.bot.jsonc         bot Worker, container and Cron Trigger settings
-tsconfig.bot.json          container-safe TypeScript config for `bot:start`
+wrangler.bot.jsonc         free bot Worker, secrets and Cron Trigger settings
+tsconfig.bot.json          gateway-safe TypeScript config for `bot:start`
 tsconfig.cloudflare.json   type-check config for the bot Worker
 ```
 
@@ -498,9 +538,9 @@ The web app uses `@sveltejs/adapter-cloudflare` and deploys to Workers Static As
 
    That runs `vite build` and `wrangler deploy`. The Worker name, compatibility date, static-assets directory and `MARKET_BACKEND=supabase` live in `wrangler.jsonc`.
 
-   To deploy both the website and the Discord bot in one command, run `npm run deploy:all` (Docker must be running for the bot image).
+   To deploy both the website and the free Discord bot Worker in one command, run `npm run deploy:all`.
 
-4. Deploy the Discord bot to Cloudflare Containers (see [Deploy the bot to Cloudflare Containers](#deploy-the-bot-to-cloudflare-containers)). It uses the same `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `APP_URL`, but its secrets are stored on the separate `anreu` Worker.
+4. Deploy the Discord bot Worker (see [Deploy the bot to Cloudflare Workers (free)](#deploy-the-bot-to-cloudflare-workers-free)). It uses the same `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `APP_URL`, but its secrets are stored on the separate `anreu` Worker. `DISCORD_PUBLIC_KEY` is optional there because the Worker can fetch it with `DISCORD_TOKEN`.
 
 To deploy the website with Workers Builds instead of the CLI, create a Worker named `settlers3`, set its build command to `npm run build` and its deploy command to `npx wrangler deploy`, then connect this repository on the `main` branch.
 

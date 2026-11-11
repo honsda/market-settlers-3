@@ -44,24 +44,9 @@
 			description: 'Point price alerts at a channel. Needs Manage Server.'
 		},
 		{
-			name: '/apply',
-			args: '—',
-			description: 'Apply to join in #apply. The bot asks five questions in DMs.'
-		},
-		{
-			name: '/initapply',
-			args: '—',
-			description: 'Post or refresh the application guide in #apply. Needs Manage Server.'
-		},
-		{
 			name: '/initrule',
 			args: 'channel',
 			description: 'Post or refresh the general community rules embed. Needs Manage Server.'
-		},
-		{
-			name: '/rolecitizen',
-			args: 'role, member',
-			description: 'Pick the role given after an application is approved. Needs Manage Server.'
 		}
 	];
 
@@ -216,7 +201,7 @@
 						</span>
 						<div>
 							<h2 class="text-sm font-semibold tracking-tight text-mist-100">Connect your own bot</h2>
-							<p class="text-[11px] text-mist-500">Five minutes, one privileged intent to switch on</p>
+							<p class="text-[11px] text-mist-500">Five minutes on the free Cloudflare Worker</p>
 						</div>
 					</div>
 				</div>
@@ -225,10 +210,10 @@
 					<ol class="space-y-3">
 						{#each [
 							'Create an application at discord.com/developers/applications and add a Bot.',
-							'Copy the bot token and Application ID into .env as DISCORD_TOKEN and DISCORD_CLIENT_ID.',
-							'Enable the Server Members intent, then invite the bot with Manage Roles, Manage Channels and Manage Messages.',
-							'Copy an alert channel ID into DISCORD_ALERT_CHANNEL_ID — or run /alerts in Discord.',
-							'Start the web app and bot together with npm run dev:all.'
+							'Copy the bot token, Application ID and Public Key into the anreu Worker secrets.',
+							'Set the Interactions Endpoint URL to https://anreu.<your-subdomain>.workers.dev/.',
+							'Copy an alert channel ID into DISCORD_ALERT_CHANNEL_ID — or run /alerts after deploying.',
+							'Run npm run bot:deploy, then npm run deploy:bot.'
 						] as step, index (index)}
 							<li class="flex gap-3">
 								<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-bid/25 bg-bid/10 font-mono text-[10px] font-semibold text-bid">
@@ -241,16 +226,17 @@
 
 					<pre class="overflow-x-auto rounded-xl border border-white/[0.07] bg-ink-950/70 p-3.5 font-mono text-[10px] leading-relaxed text-mist-300"><code>DISCORD_TOKEN=your-bot-token
 DISCORD_CLIENT_ID=your-application-id
+DISCORD_PUBLIC_KEY=your-application-public-key
 DISCORD_GUILD_ID=optional-dev-server-id
 DISCORD_ALERT_CHANNEL_ID=channel-for-price-alerts
-ALERT_THRESHOLD_PCT=8
-ALERT_COOLDOWN_MINUTES=45</code></pre>
+APP_URL=https://your-site.example</code></pre>
 
 					<div class="flex items-start gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5">
 						<Icon name="info" size={14} class="mt-0.5 shrink-0 text-bid" />
 						<p class="text-[11px] leading-relaxed text-mist-400">
 							Set <code class="font-mono text-mist-200">DISCORD_GUILD_ID</code> while developing so slash commands
-							register instantly instead of taking up to an hour to appear globally.
+							register instantly instead of taking up to an hour to appear globally. The free Worker serves
+							market commands and scheduled alerts; the DM application flow needs a gateway host.
 						</p>
 					</div>
 				</div>
@@ -331,8 +317,9 @@ ALERT_COOLDOWN_MINUTES=45</code></pre>
 					<h2 class="text-xs font-semibold text-mist-100">How sync works</h2>
 				</div>
 				<p class="mt-2 text-[11px] leading-relaxed text-mist-400">
-					The bot is a separate Node process that shares the same SQLite database as the website. Offers posted
-					with <code class="font-mono text-mist-300">/post</code> appear instantly on the dashboard, and price
+					The bot shares the same Supabase database as the website, whether it runs as the free Cloudflare
+					Worker or a gateway host. Offers posted with
+					<code class="font-mono text-mist-300">/post</code> appear instantly on the dashboard, and price
 					alerts are queued in the database so nothing is lost if Discord is briefly down.
 				</p>
 				<div class="mt-3 flex flex-wrap gap-1.5">
