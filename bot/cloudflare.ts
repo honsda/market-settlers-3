@@ -98,7 +98,7 @@ export default {
 			return getContainer(env.BOT_CONTAINER, INSTANCE).fetch(request);
 		}
 		return new Response(
-			JSON.stringify({ ok: true, worker: 'settlers3-bot', health: '/health' }),
+			JSON.stringify({ ok: true, worker: 'anreu', health: '/health' }),
 			{ headers: { 'content-type': 'application/json; charset=utf-8' } }
 		);
 	},

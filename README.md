@@ -122,7 +122,7 @@ You can deploy with **Workers Builds** (no local Docker required) or from your m
 
 #### Option A: Workers Builds (no Docker)
 
-1. In the Cloudflare dashboard, create a Worker named `settlers3-bot`: **Workers & Pages → Create application → Hello World**. The name must match `name` in `wrangler.bot.jsonc`.
+1. Use the existing `anreu` Worker, or create one named `anreu`: **Workers & Pages → Create application → Hello World**. The name must match `name` in `wrangler.bot.jsonc`.
 2. Open the Worker → **Settings → Variables and Secrets** and add the required runtime secrets from the table below: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `APP_URL`. These must be runtime secrets, not Build variables.
 3. Go to **Settings → Builds → Connect** and select:
    - Repository: `honsda/market-settlers-3`
@@ -132,7 +132,7 @@ You can deploy with **Workers Builds** (no local Docker required) or from your m
    - Deploy command: `npm run deploy:bot`
    - Turn off preview/non-production builds. Containers only update through a full `wrangler deploy`, not `wrangler versions upload`.
 4. Push a commit to `main` (or click **Deploy** / **Retry build**). The first build takes several minutes while Cloudflare builds and provisions the container image.
-5. Open `https://settlers3-bot.<your-subdomain>.workers.dev/health`. `ready` becomes `true` once Discord connects.
+5. Open `https://anreu.<your-subdomain>.workers.dev/health`. `ready` becomes `true` once Discord connects.
 
 #### Option B: Deploy from your machine (Docker)
 
@@ -159,13 +159,13 @@ You need Docker running locally for this path.
 
    This runs `wrangler deploy --config wrangler.bot.jsonc`. The first deploy builds and uploads the image. The Cron Trigger (or a request to `/health`) starts the container, and later deploys roll out a fresh image.
 
-3. Open `https://settlers3-bot.<your-subdomain>.workers.dev/health`. The response includes `ready`, the bot tag, guild count and uptime. The health route starts the container if it is not already running.
+3. Open `https://anreu.<your-subdomain>.workers.dev/health`. The response includes `ready`, the bot tag, guild count and uptime. The health route starts the container if it is not already running.
 
 The bot registers its slash commands on boot. If you only changed command definitions and do not want to rebuild the container, run `npm run bot:deploy` locally against the same Discord application.
 
 If a Workers Builds deploy fails:
 
-- **Worker name mismatch** — the Worker in the dashboard must be named exactly `settlers3-bot`.
+- **Worker name mismatch** — the Worker in the dashboard must be named exactly `anreu`.
 - **Required secrets missing** — add them under **Settings → Variables and Secrets**, not under Build variables. Build variables are only available during the build.
 - **`/health` returns 404 or 502 on the first deploy** — wait several minutes for the container image to finish provisioning, then retry. Check **Logs** for the bot process.
 
@@ -174,7 +174,7 @@ If a Workers Builds deploy fails:
 - `wrangler.bot.jsonc` sets `sleepAfter = "24h"` and a `*/5 * * * *` Cron Trigger. The cron calls `ensureRunning()`, which starts a stopped container or renews the idle timer of a running one.
 - If Cloudflare restarts or moves the container, the process reconnects to Discord on boot. The cron brings it back within five minutes.
 - `bot/health.ts` exposes `GET /health` on port 3000 only when `BOT_HEALTH_PORT` is set. Cloudflare uses it as the container readiness probe.
-- Container logs appear in the Cloudflare dashboard under **Workers & Pages → `settlers3-bot` → Logs**; live tailing is available there.
+- Container logs appear in the Cloudflare dashboard under **Workers & Pages → `anreu` → Logs**; live tailing is available there.
 
 To run the bot Worker and its container locally (Docker required):
 
@@ -365,7 +365,7 @@ Miraheze is a free MediaWiki farm, so it is good at community editing, page hist
 | `SUPABASE_ACCESS_TOKEN` | — | Personal access token used only by `npm run db:push-schema`. |
 | `NEWS_MODERATOR_KEY` | — | Staff key for `/news/moderation`; required to approve images. |
 
-`.env.local` takes precedence over `.env`. The web app, scripts and bot all load the same files (`src/lib/server/env.ts` uses `process.loadEnvFile`). On Cloudflare, set the website values on the `settlers3` Worker and the bot values on the `settlers3-bot` Worker; both are exposed to the app as `process.env`.
+`.env.local` takes precedence over `.env`. The web app, scripts and bot all load the same files (`src/lib/server/env.ts` uses `process.loadEnvFile`). On Cloudflare, set the website values on the `settlers3` Worker and the bot values on the `anreu` Worker; both are exposed to the app as `process.env`.
 
 ---
 
@@ -500,7 +500,7 @@ The web app uses `@sveltejs/adapter-cloudflare` and deploys to Workers Static As
 
    To deploy both the website and the Discord bot in one command, run `npm run deploy:all` (Docker must be running for the bot image).
 
-4. Deploy the Discord bot to Cloudflare Containers (see [Deploy the bot to Cloudflare Containers](#deploy-the-bot-to-cloudflare-containers)). It uses the same `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `APP_URL`, but its secrets are stored on the separate `settlers3-bot` Worker.
+4. Deploy the Discord bot to Cloudflare Containers (see [Deploy the bot to Cloudflare Containers](#deploy-the-bot-to-cloudflare-containers)). It uses the same `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `APP_URL`, but its secrets are stored on the separate `anreu` Worker.
 
 To deploy the website with Workers Builds instead of the CLI, create a Worker named `settlers3`, set its build command to `npm run build` and its deploy command to `npx wrangler deploy`, then connect this repository on the `main` branch.
 

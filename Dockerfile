@@ -1,12 +1,12 @@
 # Settlers III Discord bot
 #
 # Long-running Discord bot image. Cloudflare Containers builds this Dockerfile
-# and runs it as the settlers3-bot Worker; it also works on any container host.
+# and runs it as the anreu Worker; it also works on any container host.
 # The bot needs a persistent gateway connection, so do not deploy it as a web
 # service.
 #
-#   docker build -t settlers3-bot .
-#   docker run --env-file .env settlers3-bot
+#   docker build -t anreu .
+#   docker run --env-file .env anreu
 
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
