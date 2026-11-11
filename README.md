@@ -232,7 +232,7 @@ To run the free Worker locally:
 npm run bot:cloudflare:dev
 ```
 
-Wrangler reads local values from `.dev.vars` (not `.env`). Copy the required keys there before testing. For the full gateway bot without Cloudflare, use `npm run bot` or `npm run dev:all`.
+Wrangler loads `.env` (or `.dev.vars`) automatically, so a local `.env` with the required values is enough for testing. For the full gateway bot without Cloudflare, use `npm run bot` or `npm run dev:all`.
 
 ---
 
@@ -557,7 +557,7 @@ npm run preview        # vite build + wrangler dev
 - Live updates (`/api/stream`) poll Supabase every 5 seconds and the client reconnects every 4 minutes. This keeps each Worker invocation under the free plan's 50-subrequest limit.
 - Rate limiting is in-memory and therefore per isolate. It is fine for a community market, but not a hard security boundary; add Cloudflare WAF rules if you need stricter limits.
 - Uploaded news images are stored as base64 in Postgres (4 MB cap), so no R2 bucket is required.
-- The free plan's CPU budget is tight for server-side rendering. If you see CPU-limit errors under real traffic, enable Workers Paid.
+- The free plan's CPU budget is tight for server-side rendering. If you see CPU-limit errors under real traffic, reduce the amount of SSR work per route or move rendering to a host you control.
 
 ### Self-hosted Node (optional)
 
