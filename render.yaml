@@ -23,6 +23,10 @@ services:
         value: production
       - key: MARKET_BACKEND
         value: supabase
+      # The bot pings its own /health with this interval to stop the free
+      # instance from spinning down. Render provides RENDER_EXTERNAL_URL.
+      - key: SELF_KEEPALIVE_MINUTES
+        value: "10"
       - key: APP_URL
         sync: false
       - key: DISCORD_TOKEN

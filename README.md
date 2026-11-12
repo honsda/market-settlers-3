@@ -238,6 +238,8 @@ Wrangler loads `.env` (or `.dev.vars`) automatically, so a local `.env` with the
 
 Render's free **web service** runs the full gateway bot from this repository's `Dockerfile`, so every command works again: `/apply` with its DM conversation, `/initapply`, `/rolecitizen`, member-join roles, `#apply` cleanup and presence. The website can stay on Cloudflare; only the bot moves.
 
+> **What runs where:** after this switch the bot runs **only** on Render. The Cloudflare `anreu` Worker is no longer the bot — it is the optional keep-alive pinger and the HTTP-interactions fallback. The `wrangler` commands in this section touch that Worker, not the bot; the bot itself is built and run by Render from the `Dockerfile`.
+
 The catch is that Render sleeps a free service after **15 minutes without inbound traffic**, which disconnects the Discord gateway. A five-minute ping avoids that. One service running 24/7 uses roughly 730 of the free plan's 750 instance-hours, so keep the bot as the only free web service in that workspace.
 
 #### 1. Create the service
@@ -284,14 +286,16 @@ This clears the endpoint and registers the full gateway command set — 10 comma
 
 #### 4. Keep it awake
 
-The free Cloudflare bot Worker can do the pinging. Add its secret once:
+The bot keeps itself awake. Render sets `RENDER_EXTERNAL_URL` to the service's public URL, and `bot/index.ts` fetches its own `/health` every `SELF_KEEPALIVE_MINUTES` (default 10, set in `render.yaml`). Render counts that request as inbound traffic, so the service never reaches the 15-minute idle limit. No extra secret or third-party monitor is needed.
+
+A self-ping can only *prevent* a sleep; it cannot wake an instance that is already asleep or restart a crashed process. If you want a second safety net, add an external ping: the free Cloudflare Worker in this repository can do it, or any uptime monitor set to GET `/health` every 5–10 minutes. To use the Worker:
 
 ```bash
 npx wrangler secret put RENDER_BOT_URL --config wrangler.bot.jsonc
 # paste https://anreu.onrender.com
 ```
 
-`bot/worker-scheduler.ts` then pings `/health` on every five-minute Cron tick and skips its own alert, news and market posts, so nothing is announced twice. If you would rather not deploy the Worker, any free uptime monitor (cron-job.org, UptimeRobot, RenderPing) set to GET `/health` every 5–10 minutes does the same job.
+`bot/worker-scheduler.ts` then pings the service and skips its own alert, news and market posts, so nothing is announced twice. This step is optional — the Worker is not part of the bot when Render is running; it only hosts the website and this backup ping.
 
 The Render bot writes the usual 20-second heartbeat, so `/discord` shows it as connected.
 
@@ -542,6 +546,7 @@ bot/
   deploy-commands.ts       standalone registration entrypoint
   format.ts                Discord embeds
   health.ts                HTTP readiness endpoint for the gateway host
+  keepalive.ts             self-ping that keeps a free Render service awake
   cloudflare.ts            optional paid Cloudflare Containers adapter (unused by the free Worker)
 scripts/
   seed.ts / reset.ts       demo data and local database reset

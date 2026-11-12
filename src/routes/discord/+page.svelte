@@ -228,7 +228,7 @@
 							'Deploy the bot to Render: New → Blueprint, then pick honsda/market-settlers-3.',
 							'Add DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID, SUPABASE_URL, SUPABASE_SECRET_KEY and APP_URL.',
 							'Run npm run bot:gateway to clear the Worker endpoint and register the full command set.',
-							'Keep the free service awake: set RENDER_BOT_URL on the bot Worker, or ping /health every 5–10 minutes.'
+							'The bot pings its own /health every 10 minutes, so the free Render instance stays awake.'
 						] as step, index (index)}
 							<li class="flex gap-3">
 								<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-bid/25 bg-bid/10 font-mono text-[10px] font-semibold text-bid">
